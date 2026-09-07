@@ -143,41 +143,6 @@ export default function App() {
     document.documentElement.dataset.theme = prefs.theme;
   }, [prefs]);
 
-  /* ---- open a shared link --------------------------------------------- */
-
-  useEffect(() => {
-    const hash = window.location.hash;
-    const clearHash = () =>
-      history.replaceState(null, '', window.location.pathname + window.location.search);
-
-    if (hash.startsWith('#d=')) {
-      decodeShare(hash.slice(3))
-        .then((file) => {
-          const { diagram, title } = fromFile(file);
-          dispatch({ type: 'load', diagram, title, resetHistory: true });
-          notify(`Opened “${title}” from the link.`);
-          clearHash();
-        })
-        .catch(() => notify('That share link could not be read.'));
-      return;
-    }
-
-    // A published cloud diagram opens as an editable copy bound to nothing, so
-    // editing it can never overwrite the original.
-    if (hash.startsWith('#c=')) {
-      openDiagram(hash.slice(3))
-        .then(({ diagram, title }) => {
-          dispatch({ type: 'load', diagram, title, resetHistory: true });
-          setCloudDoc(null);
-          notify(`Opened a shared copy of “${title}”.`);
-          clearHash();
-        })
-        .catch(() => notify('That diagram is not published, or the link has expired.'));
-    }
-    // Runs once on mount, deliberately.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   /* ---- cloud sync ------------------------------------------------------ */
 
   // Once a diagram is bound to a row, edits are pushed back automatically; the
@@ -260,6 +225,46 @@ export default function App() {
   useEffect(() => {
     const id = window.requestAnimationFrame(() => fitToView());
     return () => window.cancelAnimationFrame(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /* ---- open a shared link --------------------------------------------- */
+
+  // Sits below fitToView so a diagram arriving from a link can be framed. The
+  // mount-time fit above has already run against whatever was restored, and a
+  // link's diagram lands one round trip later, so each load refits explicitly.
+  useEffect(() => {
+    const hash = window.location.hash;
+    const clearHash = () =>
+      history.replaceState(null, '', window.location.pathname + window.location.search);
+    const show = (diagram: Diagram, title: string, message: string) => {
+      dispatch({ type: 'load', diagram, title, resetHistory: true });
+      notify(message);
+      clearHash();
+      window.requestAnimationFrame(() => fitToView(diagram));
+    };
+
+    if (hash.startsWith('#d=')) {
+      decodeShare(hash.slice(3))
+        .then((file) => {
+          const { diagram, title } = fromFile(file);
+          show(diagram, title, `Opened “${title}” from the link.`);
+        })
+        .catch(() => notify('That share link could not be read.'));
+      return;
+    }
+
+    // A published cloud diagram opens as an editable copy bound to nothing, so
+    // editing it can never overwrite the original.
+    if (hash.startsWith('#c=')) {
+      openDiagram(hash.slice(3))
+        .then(({ diagram, title }) => {
+          setCloudDoc(null);
+          show(diagram, title, `Opened a shared copy of “${title}”.`);
+        })
+        .catch(() => notify('That diagram is not published, or the link has expired.'));
+    }
+    // Runs once on mount, deliberately.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
