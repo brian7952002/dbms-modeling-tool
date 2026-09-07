@@ -1,0 +1,25 @@
+{
+  "name": "eer-diagram-designer",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "A browser-based drag-and-drop designer for Enhanced Entity-Relationship (EER) diagrams in Chen notation.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -b --noEmit"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.116.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "^5.7.3",
+    "vite": "^6.0.11"
+  }
+}
