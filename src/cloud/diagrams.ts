@@ -8,9 +8,14 @@ export interface CloudDiagram {
   isPublic: boolean;
   updatedAt: string;
   createdAt: string;
+  /** Bumped on every save; the basis for the stale-write check. */
+  version: number;
+  projectId: string | null;
+  updatedBy: string | null;
 }
 
 const TABLE = 'diagrams';
+const META = 'id,title,is_public,created_at,updated_at,version,project_id,updated_by';
 
 interface Row {
   id: string;
@@ -19,53 +24,94 @@ interface Row {
   is_public: boolean;
   created_at: string;
   updated_at: string;
+  version: number;
+  project_id: string | null;
+  updated_by: string | null;
 }
 
-const toMeta = (r: Pick<Row, 'id' | 'title' | 'is_public' | 'created_at' | 'updated_at'>): CloudDiagram => ({
+const toMeta = (r: Omit<Row, 'data'>): CloudDiagram => ({
   id: r.id,
   title: r.title,
   isPublic: r.is_public,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
+  version: r.version,
+  projectId: r.project_id,
+  updatedBy: r.updated_by,
 });
 
-/** Row-level security limits this to the signed-in user's own diagrams. */
+/**
+ * Raised when the row moved on since it was loaded. Carrying a distinct type
+ * lets the editor offer to reload rather than reporting a generic failure and
+ * quietly losing whoever saved first.
+ */
+export class ConflictError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ConflictError';
+  }
+}
+
+/** PostgREST surfaces a `PTxyz` SQLSTATE as HTTP xyz and reports it as the code. */
+const isConflict = (code?: string) => code === 'PT409';
+
+/**
+ * Everything the signed-in user may open: their own diagrams plus every
+ * diagram in a project they belong to. Row-level security decides; this only
+ * asks.
+ */
 export async function listDiagrams(): Promise<CloudDiagram[]> {
   const { data, error } = await requireClient()
     .from(TABLE)
-    .select('id,title,is_public,created_at,updated_at')
+    .select(META)
     .order('updated_at', { ascending: false });
   if (error) throw new Error(error.message);
-  return (data ?? []).map(toMeta);
+  return (data ?? []).map((r) => toMeta(r as Omit<Row, 'data'>));
 }
 
 export async function createDiagram(
   ownerId: string,
   diagram: Diagram,
   title: string,
+  projectId: string | null = null,
 ): Promise<CloudDiagram> {
   const { data, error } = await requireClient()
     .from(TABLE)
-    .insert({ owner: ownerId, title, data: toFile(diagram, title) })
-    .select('id,title,is_public,created_at,updated_at')
+    .insert({
+      owner: ownerId,
+      title,
+      data: toFile(diagram, title),
+      project_id: projectId,
+    })
+    .select(META)
     .single();
   if (error) throw new Error(error.message);
-  return toMeta(data as Row);
+  return toMeta(data as Omit<Row, 'data'>);
 }
 
-export async function updateDiagram(
+/**
+ * Saves through the database function rather than a plain UPDATE, so the
+ * permission check, the stale-write check, the version snapshot and the
+ * activity entry all happen in one transaction.
+ */
+export async function saveDiagram(
   id: string,
   diagram: Diagram,
   title: string,
-): Promise<CloudDiagram> {
-  const { data, error } = await requireClient()
-    .from(TABLE)
-    .update({ title, data: toFile(diagram, title) })
-    .eq('id', id)
-    .select('id,title,is_public,created_at,updated_at')
-    .single();
-  if (error) throw new Error(error.message);
-  return toMeta(data as Row);
+  expectedVersion: number | null,
+): Promise<{ version: number; updatedAt: string }> {
+  const { data, error } = await requireClient().rpc('save_diagram', {
+    p_id: id,
+    p_title: title,
+    p_data: toFile(diagram, title),
+    p_expected_version: expectedVersion,
+  });
+  if (error) {
+    if (isConflict(error.code)) throw new ConflictError(error.message);
+    throw new Error(error.message);
+  }
+  const row = Array.isArray(data) ? data[0] : data;
+  return { version: row.version as number, updatedAt: row.updated_at as string };
 }
 
 export async function openDiagram(
@@ -73,7 +119,7 @@ export async function openDiagram(
 ): Promise<{ meta: CloudDiagram; diagram: Diagram; title: string }> {
   const { data, error } = await requireClient()
     .from(TABLE)
-    .select('id,title,data,is_public,created_at,updated_at')
+    .select(`${META},data`)
     .eq('id', id)
     .single();
   if (error) throw new Error(error.message);
@@ -93,12 +139,23 @@ export async function deleteDiagram(id: string): Promise<void> {
 }
 
 /**
- * Publishing flips a single flag. The read policy on the table lets anyone —
- * signed in or not — select rows where `is_public` is true, so the share link
- * needs no token of its own.
+ * Publishing flips a single flag. The read policy lets anyone — signed in or
+ * not — select rows where `is_public` is true, so the share link needs no
+ * token of its own. Going through the function records who did it.
  */
 export async function setPublished(id: string, isPublic: boolean): Promise<void> {
-  const { error } = await requireClient().from(TABLE).update({ is_public: isPublic }).eq('id', id);
+  const { error } = await requireClient().rpc('set_diagram_published', {
+    p_id: id,
+    p_public: isPublic,
+  });
+  if (error) throw new Error(error.message);
+}
+
+export async function moveToProject(id: string, projectId: string | null): Promise<void> {
+  const { error } = await requireClient().rpc('move_diagram_to_project', {
+    p_id: id,
+    p_project: projectId,
+  });
   if (error) throw new Error(error.message);
 }
 

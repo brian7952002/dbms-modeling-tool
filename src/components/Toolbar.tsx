@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Tool } from './Canvas';
+import { colorFor as peerColor } from '../cloud/presence';
 
 interface Props {
   title: string;
@@ -16,6 +17,9 @@ interface Props {
   userEmail: string | null;
   /** Short status line for the open cloud document, e.g. "Saved 2 min ago". */
   cloudStatus: string | null;
+  /** Other people with this diagram open right now. */
+  peers: { userId: string; name: string }[];
+  projectName: string | null;
   onAction: (action: ToolbarAction) => void;
 }
 
@@ -40,6 +44,8 @@ export type ToolbarAction =
   | 'toggle-theme'
   | 'toggle-issues'
   | 'library'
+  | 'projects'
+  | 'history'
   | 'cloud-save'
   | 'account'
   | 'help';
@@ -85,6 +91,8 @@ export function Toolbar({
   cloudEnabled,
   userEmail,
   cloudStatus,
+  peers,
+  projectName,
   onAction,
 }: Props) {
   const act = (a: ToolbarAction) => () => onAction(a);
@@ -115,9 +123,11 @@ export function Toolbar({
       <Menu label="Cloud">
         {cloudEnabled ? (
           <>
-            <button type="button" onClick={act('library')}>My diagrams…</button>
+            <button type="button" onClick={act('library')}>Diagrams…</button>
+            <button type="button" onClick={act('projects')}>Projects &amp; members…</button>
+            <button type="button" onClick={act('history')}>History &amp; activity…</button>
             <button type="button" onClick={act('cloud-save')}>
-              Save to my account
+              Save now
             </button>
             <hr />
             <button type="button" onClick={act('account')}>
@@ -195,6 +205,18 @@ export function Toolbar({
 
       <div className="spacer" />
 
+      {peers.length > 0 && (
+        <span className="peers" title={`${peers.map((p) => p.name).join(', ')} also have this open`}>
+          {peers.slice(0, 4).map((p) => (
+            <span key={p.userId} className="peer-dot" style={{ background: peerColor(p.userId) }}>
+              {p.name.slice(0, 1).toUpperCase()}
+            </span>
+          ))}
+          {peers.length > 4 && <span className="peer-more">+{peers.length - 4}</span>}
+        </span>
+      )}
+
+      {projectName && <span className="cloud-status project-chip">{projectName}</span>}
       {cloudStatus && <span className="cloud-status">{cloudStatus}</span>}
 
       <button

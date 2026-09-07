@@ -27,11 +27,21 @@ import { useAuth } from './cloud/auth';
 import { AccountModal } from './components/AccountModal';
 import { LibraryModal } from './components/LibraryModal';
 import {
+  ConflictError,
   createDiagram,
   openDiagram,
-  updateDiagram,
+  saveDiagram,
   type CloudDiagram,
 } from './cloud/diagrams';
+import { ProjectsModal } from './components/ProjectsModal';
+import { HistoryModal } from './components/HistoryModal';
+import {
+  canEdit,
+  listProjects,
+  redeemInvite,
+  type Project,
+} from './cloud/projects';
+import { usePresence } from './cloud/presence';
 
 const STORAGE_KEY = 'eer-designer:autosave:v1';
 const PREFS_KEY = 'eer-designer:prefs:v1';
@@ -82,8 +92,12 @@ export default function App() {
   const [tool, setTool] = useState<Tool>('select');
   const [viewport, setViewport] = useState<Viewport>({ x: 40, y: 40, k: 0.75 });
   const [modal, setModal] = useState<
-    null | 'help' | 'sql' | 'share' | 'account' | 'library'
+    null | 'help' | 'sql' | 'share' | 'account' | 'library' | 'projects' | 'history'
   >(null);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [activeProject, setActiveProject] = useState<Project | null>(null);
+  /** Set when a save was refused because someone else got there first. */
+  const [conflict, setConflict] = useState<string | null>(null);
   /** The cloud row this canvas is currently bound to, if any. */
   const [cloudDoc, setCloudDoc] = useState<CloudDiagram | null>(null);
   const [cloudState, setCloudState] = useState<
@@ -145,6 +159,35 @@ export default function App() {
 
   /* ---- cloud sync ------------------------------------------------------ */
 
+  const refreshProjects = useCallback(async () => {
+    if (!auth.user) {
+      setProjects([]);
+      setActiveProject(null);
+      return;
+    }
+    try {
+      const list = await listProjects(auth.user.id);
+      setProjects(list);
+      setActiveProject((current) =>
+        current ? (list.find((p) => p.id === current.id) ?? null) : null,
+      );
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Could not load your projects.');
+    }
+  }, [auth.user, notify]);
+
+  useEffect(() => {
+    void refreshProjects();
+  }, [refreshProjects]);
+
+  /** The role that governs the diagram currently on the canvas. */
+  const currentProject = useMemo(
+    () => (cloudDoc?.projectId ? projects.find((p) => p.id === cloudDoc.projectId) ?? null : null),
+    [cloudDoc?.projectId, projects],
+  );
+  const readOnly = Boolean(currentProject && !canEdit(currentProject.role));
+
+
   // Once a diagram is bound to a row, edits are pushed back automatically; the
   // delay keeps a burst of dragging from turning into a burst of requests.
   useEffect(() => {
@@ -153,50 +196,106 @@ export default function App() {
       skipAutosave.current = false;
       return;
     }
+    if (readOnly) return;
     setCloudState('pending');
     const timer = window.setTimeout(async () => {
       setCloudState('saving');
       try {
-        const meta = await updateDiagram(cloudDoc.id, state.diagram, state.title);
-        setCloudDoc(meta);
+        const saved = await saveDiagram(
+          cloudDoc.id,
+          state.diagram,
+          state.title,
+          cloudDoc.version,
+        );
+        setCloudDoc({ ...cloudDoc, ...saved, title: state.title });
         setCloudState('saved');
       } catch (err) {
         setCloudState('error');
-        notify(err instanceof Error ? err.message : 'Could not save to your account.');
+        if (err instanceof ConflictError) {
+          // Do not keep retrying: every attempt would overwrite the other
+          // person's work with a stale copy.
+          setConflict(err.message);
+        } else {
+          notify(err instanceof Error ? err.message : 'Could not save to your account.');
+        }
       }
     }, 2000);
     return () => window.clearTimeout(timer);
     // cloudDoc.id is the identity that matters; the object itself is replaced
     // on every successful save.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.diagram, state.title, auth.user, cloudDoc?.id]);
+  }, [state.diagram, state.title, auth.user, cloudDoc?.id, readOnly]);
 
   /** Binds the canvas to a cloud row without triggering an immediate re-save. */
   const bindCloudDoc = useCallback((meta: CloudDiagram | null) => {
     skipAutosave.current = true;
     setCloudDoc(meta);
     setCloudState(meta ? 'saved' : 'idle');
+    setConflict(null);
   }, []);
+
+  /** Discards local edits in favour of what is actually stored. */
+  const reloadFromCloud = useCallback(async () => {
+    if (!cloudDoc) return;
+    try {
+      const loaded = await openDiagram(cloudDoc.id);
+      dispatch({ type: 'load', diagram: loaded.diagram, title: loaded.title, resetHistory: true });
+      bindCloudDoc(loaded.meta);
+      window.requestAnimationFrame(() => fitToView(loaded.diagram));
+      notify('Reloaded the latest version.');
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Could not reload.');
+    }
+    // fitToView is declared below; it is only read when this runs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bindCloudDoc, cloudDoc, notify]);
 
   const saveToCloud = useCallback(async () => {
     if (!auth.enabled || !auth.user) {
       setModal('account');
       return;
     }
+    if (readOnly) {
+      notify('You have view-only access to this diagram.');
+      return;
+    }
     setCloudState('saving');
     try {
-      const meta = cloudDoc
-        ? await updateDiagram(cloudDoc.id, state.diagram, state.title)
-        : await createDiagram(auth.user.id, state.diagram, state.title);
-      bindCloudDoc(meta);
-      notify(
-        cloudDoc ? 'Saved to your account.' : `Saved “${meta.title}” to your account.`,
-      );
+      if (cloudDoc) {
+        const saved = await saveDiagram(
+          cloudDoc.id,
+          state.diagram,
+          state.title,
+          cloudDoc.version,
+        );
+        bindCloudDoc({ ...cloudDoc, ...saved, title: state.title });
+        notify('Saved.');
+      } else {
+        const meta = await createDiagram(
+          auth.user.id,
+          state.diagram,
+          state.title,
+          activeProject && canEdit(activeProject.role) ? activeProject.id : null,
+        );
+        bindCloudDoc(meta);
+        notify(`Saved “${meta.title}”.`);
+      }
     } catch (err) {
       setCloudState('error');
-      notify(err instanceof Error ? err.message : 'Could not save to your account.');
+      if (err instanceof ConflictError) setConflict(err.message);
+      else notify(err instanceof Error ? err.message : 'Could not save to your account.');
     }
-  }, [auth.enabled, auth.user, bindCloudDoc, cloudDoc, notify, state.diagram, state.title]);
+  }, [
+    activeProject,
+    auth.enabled,
+    auth.user,
+    bindCloudDoc,
+    cloudDoc,
+    notify,
+    readOnly,
+    state.diagram,
+    state.title,
+  ]);
 
   /* ---- viewport helpers ------------------------------------------------ */
 
@@ -256,6 +355,26 @@ export default function App() {
 
     // A published cloud diagram opens as an editable copy bound to nothing, so
     // editing it can never overwrite the original.
+    if (hash.startsWith('#join=')) {
+      const code = hash.slice(6);
+      redeemInvite(code)
+        .then(async (r) => {
+          await refreshProjects();
+          notify(
+            r.alreadyMember
+              ? `You are already a ${r.role} of “${r.projectName}”.`
+              : `Joined “${r.projectName}” as ${r.role}.`,
+          );
+          clearHash();
+          setModal('projects');
+        })
+        .catch((err) => {
+          notify(err instanceof Error ? err.message : 'That invite link did not work.');
+          clearHash();
+        });
+      return;
+    }
+
     if (hash.startsWith('#c=')) {
       openDiagram(hash.slice(3))
         .then(({ diagram, title }) => {
@@ -511,6 +630,16 @@ export default function App() {
         case 'library':
           setModal(auth.user ? 'library' : 'account');
           break;
+        case 'projects':
+          setModal(auth.user ? 'projects' : 'account');
+          break;
+        case 'history':
+          if (!cloudDoc) {
+            notify('Save this diagram to your account first — history starts there.');
+          } else {
+            setModal('history');
+          }
+          break;
         case 'cloud-save':
           void saveToCloud();
           break;
@@ -525,6 +654,8 @@ export default function App() {
     [
       auth.user,
       bindCloudDoc,
+      cloudDoc,
+      notify,
       exportPng,
       exportSvg,
       fitToView,
@@ -593,9 +724,18 @@ export default function App() {
 
   /* ---- render ---------------------------------------------------------- */
 
+  // Only meaningful for a shared diagram: a private one has no one else in it.
+  const peers = usePresence(
+    cloudDoc && cloudDoc.projectId ? cloudDoc.id : null,
+    auth.user
+      ? { id: auth.user.id, name: auth.user.email?.split('@')[0] ?? 'Someone' }
+      : null,
+  );
+
   const cloudStatus = useMemo(() => {
     if (!auth.enabled || !auth.user) return null;
     if (!cloudDoc) return 'Not in your account';
+    if (readOnly) return `View only · ${currentProject?.name ?? 'project'}`;
     switch (cloudState) {
       case 'saving':
         return 'Saving…';
@@ -606,7 +746,7 @@ export default function App() {
       default:
         return `Saved · ${cloudDoc.title}`;
     }
-  }, [auth.enabled, auth.user, cloudDoc, cloudState]);
+  }, [auth.enabled, auth.user, cloudDoc, cloudState, currentProject, readOnly]);
 
   const ddl = useMemo(
     () => (modal === 'sql' ? generateDdl(state.diagram, state.title) : null),
@@ -629,6 +769,8 @@ export default function App() {
         cloudEnabled={auth.enabled}
         userEmail={auth.user?.email ?? null}
         cloudStatus={cloudStatus}
+        peers={peers}
+        projectName={currentProject?.name ?? null}
         onAction={onToolbarAction}
       />
 
@@ -766,12 +908,40 @@ export default function App() {
 
       {modal === 'account' && <AccountModal onClose={() => setModal(null)} />}
 
+      {modal === 'projects' && (
+        <ProjectsModal
+          onClose={() => setModal(null)}
+          projects={projects}
+          activeProjectId={activeProject?.id ?? null}
+          onRefresh={refreshProjects}
+          onOpenProject={(p) => {
+            setActiveProject(p);
+            setModal('library');
+          }}
+          notify={notify}
+        />
+      )}
+
+      {modal === 'history' && cloudDoc && (
+        <HistoryModal
+          diagramId={cloudDoc.id}
+          diagramTitle={state.title}
+          canEdit={!readOnly}
+          onClose={() => setModal(null)}
+          onRestored={reloadFromCloud}
+          notify={notify}
+        />
+      )}
+
       {modal === 'library' && (
         <LibraryModal
           onClose={() => setModal(null)}
           diagram={state.diagram}
           title={state.title}
           currentId={cloudDoc?.id ?? null}
+          projects={projects}
+          activeProject={activeProject}
+          onChangeProject={setActiveProject}
           onOpened={(meta, diagram, title) => {
             dispatch({ type: 'load', diagram, title, resetHistory: true });
             bindCloudDoc(meta);
@@ -780,6 +950,31 @@ export default function App() {
           onSaved={bindCloudDoc}
           notify={notify}
         />
+      )}
+
+      {conflict && (
+        <div className="conflict-bar" role="alert">
+          <span>
+            <strong>{conflict}</strong> Your changes are still on this canvas — reload to take
+            theirs, or save a copy to keep yours.
+          </span>
+          <button type="button" onClick={() => void reloadFromCloud()}>
+            Reload theirs
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              bindCloudDoc(null);
+              setConflict(null);
+              notify('Unlinked. Use Cloud ▸ My diagrams to save this as a new diagram.');
+            }}
+          >
+            Keep mine as a copy
+          </button>
+          <button type="button" className="icon" onClick={() => setConflict(null)} aria-label="Dismiss">
+            ✕
+          </button>
+        </div>
       )}
 
       {toast && <div className="toast">{toast}</div>}

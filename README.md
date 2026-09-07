@@ -44,6 +44,13 @@ disjoint specialisation — are called out as warnings rather than silently drop
 **Sharing and storage.** Autosave to the browser, `.eer.json` files, SVG and PNG export, a shareable
 link that carries the entire diagram in the URL, and optional accounts with a private cloud library.
 
+**Team projects.** Start a project, hand out a revocable invite link, and work on the same diagrams.
+Members are owners, editors, or viewers, enforced by row-level security rather than by hiding
+buttons. Every change is attributed: a restorable version history with the author on each snapshot,
+plus an activity feed covering the things a snapshot cannot show — renames, publishing, joining.
+Presence shows who else has a diagram open, and a save based on a stale copy is refused rather than
+silently overwriting a teammate.
+
 ---
 
 ## Using it
@@ -113,14 +120,44 @@ up.
 
 For local development, copy `.env.example` to `.env.local` and fill in the same two values.
 
+### Working as a team
+
+**Cloud ▸ Projects & members** creates a project and generates invite links. Anyone signed in who
+opens a link joins with that link's role; revoking a link stops it working immediately, while people
+who already joined stay. Move a personal diagram into a project from the library, or back out again.
+
+| Role | Can |
+| --- | --- |
+| Owner | Everything, plus managing members and invite links, and deleting the project |
+| Editor | Open and change the project's diagrams, publish read-only links |
+| Viewer | Open, export and copy — no changes |
+
+**Cloud ▸ History & activity** shows the diagram's version history with the author of each snapshot,
+and restores any of them. A restore is saved on top as a new version, so the trail is never rewritten.
+
+Two people editing at once is handled without a merge engine. Presence shows who else is in the
+diagram, and every save carries the version it was based on: if someone saved first, yours is
+refused and you are offered the choice of reloading theirs or keeping yours as a separate copy.
+Nothing is overwritten silently.
+
 ### Why it is safe to publish those keys
 
-The anon key is designed to ship in client bundles. On its own it grants nothing: every policy in
-`supabase/schema.sql` restricts rows to `auth.uid() = owner`, so a signed-in user can only read and
-write their own diagrams. The one exception is deliberate — a diagram the owner explicitly publishes
-becomes readable by anyone holding its link, which is how team sharing works. Publishing can be
-reverted at any time from the library, and a shared link always opens as an editable *copy*, so a
-teammate can never overwrite the original.
+The publishable key is designed to ship in client bundles. On its own it grants nothing — every
+table is guarded by row-level security, and the guarantees are properties of the database rather
+than of the interface:
+
+- A signed-in user reads their own diagrams, plus those in projects they belong to. Nothing else.
+- A viewer cannot write, even by calling the API directly.
+- `owner` is revoked from the anonymous role at the column level, so a published diagram exposes its
+  content without its author's id.
+- Invite codes are never selectable. Redemption goes through a `SECURITY DEFINER` function, so a
+  link cannot be found by enumeration.
+- `diagram_versions` and `activity` have no INSERT policy at all. Only the audited functions write
+  them, so the history cannot be forged from a browser.
+
+The one deliberate exception is publishing: a diagram its owner explicitly publishes becomes
+readable by anyone holding the link. That can be reverted at any time, and a published link always
+opens as an editable *copy*, so it can never overwrite the original.
 
 ---
 
@@ -134,10 +171,10 @@ src/
   model/       types, geometry, graph queries, validation, SQL generation, samples
   state/       reducer with undo/redo history
   components/  canvas, shapes, palette, inspector, panels, modals
-  cloud/       Supabase client, auth context, diagram CRUD
+  cloud/       Supabase client, auth context, diagram CRUD, projects, presence
   export/      SVG serialisation and PNG rasterisation
 supabase/
-  schema.sql   table + row-level-security policies
+  schema.sql   tables, row-level-security policies, and the audited write functions
 ```
 
 Two decisions are worth knowing about if you read the code:
@@ -145,6 +182,9 @@ Two decisions are worth knowing about if you read the code:
 - **Diagram styling lives inside the `<svg>` as a `<style>` element.** SVG export is therefore a
   clone, a few `remove()` calls and a new `viewBox` — the exported file looks identical outside the
   app with no style-rewriting step.
+- **Collaboration is enforced in Postgres, not in React.** Saves go through `save_diagram()`, which
+  re-checks permission, rejects a stale write, records the snapshot and writes the activity row in
+  one transaction. The interface hides what you cannot do; the database is what stops you.
 - **Chen ratio labels and `(min,max)` constraints read in opposite directions.** In `A —1— R —N— B`
   it is *B* whose table takes the foreign key; in `A —(1,N)— R —(1,1)— B` the `(1,1)` marks the same
   side. `functionalSides()` in `src/model/ddl.ts` normalises both notations before anything
