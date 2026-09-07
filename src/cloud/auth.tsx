@@ -19,6 +19,9 @@ const AuthContext = createContext<AuthValue | null>(null);
 /** Turns Supabase's error strings into something a student can act on. */
 function friendly(message: string): string {
   const m = message.toLowerCase();
+  if (m.includes('failed to fetch') || m.includes('networkerror') || m.includes('load failed')) {
+    return 'Could not reach the accounts service. Check your connection — or the app may be misconfigured.';
+  }
   if (m.includes('invalid login credentials')) {
     return 'That email and password combination was not recognised.';
   }
