@@ -97,6 +97,15 @@ export function diagramCss(theme: Theme): string {
   dominant-baseline: central;
 }
 .eer-svg .edge-label.role { font-size: 11px; font-weight: 600; fill: var(--muted); font-style: italic; }
+.eer-svg .edge-label.defining { font-size: 11px; font-weight: 600; fill: var(--isa-line); }
+.eer-svg .subset-symbol {
+  fill: none;
+  stroke: var(--line);
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.eer-svg .selected .subset-symbol { stroke: var(--accent); }
 
 .eer-svg .selected .shape { stroke: var(--accent); }
 .eer-svg .selected .edge-line { stroke: var(--accent); stroke-width: 2.6; }

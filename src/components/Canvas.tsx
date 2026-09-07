@@ -117,6 +117,19 @@ export function Canvas({
     return out;
   }, [diagram.edges, nodeById]);
 
+  /** Attribute-defined specialisation labels, shown on the superclass line. */
+  const definingLabels = useMemo(() => {
+    const out = new Map<Id, string>();
+    for (const e of diagram.edges) {
+      if (e.kind !== 'isa-super') continue;
+      const isa = nodeById.get(e.target);
+      if (isa && isa.kind === 'isa' && isa.definingAttribute?.trim()) {
+        out.set(e.id, isa.definingAttribute.trim());
+      }
+    }
+    return out;
+  }, [diagram.edges, nodeById]);
+
   /** Which edges get drawn as double lines. */
   const doubleEdges = useMemo(() => {
     const out = new Set<Id>();
@@ -410,6 +423,7 @@ export function Canvas({
                 bow={bows.get(e.id) ?? 0}
                 selected={selected.has(e.id)}
                 double={doubleEdges.has(e.id)}
+                definingAttribute={definingLabels.get(e.id)}
                 onPointerDown={onEdgePointerDown}
               />
             );

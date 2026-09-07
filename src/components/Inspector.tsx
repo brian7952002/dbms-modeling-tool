@@ -8,9 +8,11 @@ import type {
 } from '../model/types';
 import type { Action } from '../state/store';
 import { COMMON_TYPES } from '../model/ddl';
+import { isaSize } from '../model/measure';
 import {
   attributesOf,
   isRecursive,
+  isaParentsOf,
   nodeById,
   participantsOf,
   subclassesOf,
@@ -306,6 +308,21 @@ export function Inspector({
             addLabel="Add attribute"
           />
           <SubList
+            title="Specialisation"
+            empty="Not part of any ISA hierarchy."
+            items={[
+              ...diagram.edges
+                .filter((e) => e.kind === 'isa-super' && e.source === node.id)
+                .map((e) => ({ id: e.id, label: 'superclass of this hierarchy', note: '' })),
+              ...isaParentsOf(diagram, node.id).map((isa) => ({
+                id: isa.id,
+                label: `subclass · ${isa.disjoint ? 'disjoint' : 'overlapping'}`,
+                note: isa.total ? 'total' : 'partial',
+              })),
+            ]}
+            onSelect={select}
+          />
+          <SubList
             title="Relationships"
             empty="Not connected to any relationship."
             items={diagram.edges
@@ -449,6 +466,31 @@ export function Inspector({
               <option value="partial">Partial — a superclass member need not be in any subclass</option>
               <option value="total">Total — every superclass member is in some subclass</option>
             </select>
+          </Field>
+          <Field
+            label="Symbol"
+            hint="Elmasri & Navathe draw a circle; some texts use a triangle labelled ISA. Either way each subclass line carries the ⊂ subset symbol."
+          >
+            <select
+              value={node.symbol ?? 'circle'}
+              onChange={(e) => {
+                const symbol = e.target.value as 'circle' | 'triangle';
+                patchNode(node.id, { symbol, ...isaSize(symbol) });
+              }}
+            >
+              <option value="circle">Circle with d / o</option>
+              <option value="triangle">Triangle</option>
+            </select>
+          </Field>
+          <Field
+            label="Defining attribute"
+            hint="For attribute-defined specialisation — shown on the line to the superclass, e.g. Job_type."
+          >
+            <input
+              value={node.definingAttribute ?? ''}
+              placeholder="optional"
+              onChange={(e) => patchNode(node.id, { definingAttribute: e.target.value })}
+            />
           </Field>
           <SubList
             title="Superclass"

@@ -6,6 +6,7 @@ import {
   isRecursive,
   isaNodes,
   isaParentOf,
+  isaParentsOf,
   keyAttributes,
   nodeById,
   participantsOf,
@@ -197,12 +198,12 @@ export function validate(d: Diagram): Issue[] {
     const sup = superclassOf(d, isa.id);
     const subs = subclassesOf(d, isa.id);
     if (!sup) {
-      add('error', 'An ISA triangle has no superclass attached.', [isa.id]);
+      add('error', 'A specialisation marker has no superclass attached.', [isa.id]);
     }
     if (subs.length === 0) {
       add(
         'error',
-        `ISA triangle${sup ? ` below "${sup.name}"` : ''} has no subclasses.`,
+        `Specialisation${sup ? ` of "${sup.name}"` : ''} has no subclasses.`,
         [isa.id],
       );
     } else if (subs.length === 1 && isa.disjoint) {
@@ -215,11 +216,19 @@ export function validate(d: Diagram): Issue[] {
     if (sup && subs.some((s) => s.id === sup.id)) {
       add(
         'error',
-        `"${sup.name}" is both the superclass and a subclass of the same ISA.`,
+        `"${sup.name}" is both the superclass and a subclass of the same specialisation.`,
         [isa.id],
       );
     }
     for (const s of subs) {
+      const parents = isaParentsOf(d, s.id);
+      if (parents.length > 1) {
+        add(
+          'info',
+          `"${s.name}" is a shared subclass of ${parents.length} specialisations. That is legal EER; the SQL mapping takes its key from the first superclass.`,
+          [s.id],
+        );
+      }
       if (keyAttributes(d, s.id).length > 0) {
         add(
           'warning',

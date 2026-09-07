@@ -84,13 +84,19 @@ function NodeShapeImpl({
       break;
 
     case 'isa':
-      shape = (
-        <g transform={`rotate(${isaAngle} ${x} ${y})`}>
-          <polygon className="shape" points={trianglePoints(x, y, w, h)} />
-        </g>
-      );
+      // Elmasri & Navathe draw the d/o marker in a circle; other texts use a
+      // triangle, which is rotated so its apex points at the superclass.
+      shape =
+        node.symbol === 'triangle' ? (
+          <g transform={`rotate(${isaAngle} ${x} ${y})`}>
+            <polygon className="shape" points={trianglePoints(x, y, w, h)} />
+          </g>
+        ) : (
+          <circle className="shape" cx={x} cy={y} r={Math.min(w, h) / 2} />
+        );
       label = node.disjoint ? 'd' : 'o';
-      labelDy = 8; // sits inside the wide part of the triangle
+      // In the triangle form the label sits in the wide lower half.
+      labelDy = node.symbol === 'triangle' ? 8 : 0;
       break;
 
     case 'union':

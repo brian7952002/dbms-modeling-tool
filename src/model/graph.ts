@@ -110,12 +110,20 @@ export function unionCategory(d: Diagram, unionId: Id): EntityNode | undefined {
   return n && n.kind === 'entity' ? n : undefined;
 }
 
-/** The ISA triangle, if any, that makes this entity a subclass. */
+/**
+ * Every specialisation this entity is a subclass of. More than one means a
+ * shared subclass — multiple inheritance, which EER allows.
+ */
+export function isaParentsOf(d: Diagram, entityId: Id): IsaNode[] {
+  return d.edges
+    .filter((e) => e.kind === 'isa-sub' && e.source === entityId)
+    .map((e) => nodeById(d, e.target))
+    .filter((n): n is IsaNode => !!n && n.kind === 'isa');
+}
+
+/** The first specialisation making this entity a subclass, if any. */
 export function isaParentOf(d: Diagram, entityId: Id): IsaNode | undefined {
-  const e = d.edges.find((x) => x.kind === 'isa-sub' && x.source === entityId);
-  if (!e) return undefined;
-  const n = nodeById(d, e.target);
-  return n && n.kind === 'isa' ? n : undefined;
+  return isaParentsOf(d, entityId)[0];
 }
 
 /**

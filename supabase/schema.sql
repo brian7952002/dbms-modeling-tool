@@ -81,3 +81,20 @@ create policy "update own diagrams"
 create policy "delete own diagrams"
   on public.diagrams for delete
   using (auth.uid() = owner);
+
+-- ---------------------------------------------------------------------------
+-- Column-level privileges
+--
+-- Row-level security decides which rows anonymous callers may read; this
+-- decides which columns. A published diagram needs its content, not the
+-- identity of whoever wrote it, so `owner` is withheld from the anon role
+-- entirely — no query it can write will return that column.
+--
+-- `authenticated` keeps full access, which is what insert and the ownership
+-- policies need.
+-- ---------------------------------------------------------------------------
+
+revoke select on public.diagrams from anon;
+
+grant select (id, title, data, is_public, created_at, updated_at)
+  on public.diagrams to anon;

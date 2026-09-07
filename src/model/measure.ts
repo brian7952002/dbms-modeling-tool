@@ -29,6 +29,10 @@ export function measureText(text: string, font = LABEL_FONT): number {
   return width;
 }
 
+/** Size of a specialisation marker, which depends on which form it takes. */
+export const isaSize = (symbol?: 'circle' | 'triangle') =>
+  symbol === 'triangle' ? { w: 74, h: 54 } : { w: 46, h: 46 };
+
 /** Shape size that comfortably contains the label, per shape geometry. */
 export function fitSize(kind: NodeKind, name: string): { w: number; h: number } {
   const t = measureText(name || ' ');
@@ -41,7 +45,7 @@ export function fitSize(kind: NodeKind, name: string): { w: number; h: number } 
     case 'attribute':
       return { w: Math.max(96, Math.round(t + 30)), h: 46 };
     case 'isa':
-      return { w: 74, h: 54 };
+      return isaSize();
     case 'union':
       return { w: 44, h: 44 };
   }

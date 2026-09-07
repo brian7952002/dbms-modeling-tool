@@ -112,8 +112,10 @@ export function reducer(s: AppState, a: Action): AppState {
       const nodes = s.diagram.nodes.map((n) => {
         if (n.id !== a.id) return n;
         const merged = { ...n, ...a.patch } as DiagramNode;
-        // Keep the shape big enough for its label as the user types.
-        return a.patch.name !== undefined
+        // Keep the shape big enough for its label as the user types. Marker
+        // shapes are sized by their symbol, not their label, so they opt out.
+        const sizedByLabel = merged.kind !== 'isa' && merged.kind !== 'union';
+        return a.patch.name !== undefined && sizedByLabel
           ? { ...merged, ...fitSize(merged.kind, merged.name) }
           : merged;
       });
@@ -143,9 +145,10 @@ export function reducer(s: AppState, a: Action): AppState {
       if (!na || !nb) return s;
       const spec = inferEdge(na, nb, s.diagram);
       if (!spec) return s;
-      // Attributes and ISA/union legs may only be attached once.
-      const singleUse =
-        spec.kind === 'attribute' || spec.kind === 'isa-sub' || spec.kind === 'union-sub';
+      // An attribute belongs to exactly one owner, and a category has exactly
+      // one subclass. A subclass may sit under several specialisations though
+      // — that is a shared subclass, and it is legal EER.
+      const singleUse = spec.kind === 'attribute' || spec.kind === 'union-sub';
       if (
         singleUse &&
         s.diagram.edges.some((e) => e.kind === spec.kind && e.source === spec.source)

@@ -11,6 +11,8 @@ interface Props {
   selected: boolean;
   /** Draw as a double line (total participation, or total specialisation). */
   double: boolean;
+  /** Extra label on the line into a specialisation marker. */
+  definingAttribute?: string;
   onPointerDown?: (e: React.PointerEvent, edge: Edge) => void;
 }
 
@@ -29,7 +31,41 @@ function cardinalityLabel(edge: Edge): string | null {
   return parts.join(' ') || null;
 }
 
-function EdgeShapeImpl({ edge, from, to, bow, selected, double, onPointerDown }: Props) {
+/**
+ * The subset symbol (⊂) EER puts on the line from a specialisation marker to
+ * each subclass, and from a category to its union circle. It is built from the
+ * line's own direction rather than drawn as a text glyph: the opening has to
+ * face the superclass whatever angle the line sits at, and a rotated ⊂
+ * character cannot be relied on once the SVG is exported away from the app's
+ * fonts.
+ */
+function subsetPath(at: Point, ux: number, uy: number, r = 9): string {
+  // Perpendicular, so the arc can be swept in the line's own frame.
+  const px = -uy;
+  const py = ux;
+  const points: string[] = [];
+  // 60° through 300° traces a C whose opening faces +u.
+  for (let deg = 60; deg <= 300; deg += 20) {
+    const a = (deg * Math.PI) / 180;
+    const c = Math.cos(a);
+    const s = Math.sin(a);
+    points.push(
+      `${(at.x + r * (c * ux + s * px)).toFixed(2)} ${(at.y + r * (c * uy + s * py)).toFixed(2)}`,
+    );
+  }
+  return `M ${points.join(' L ')}`;
+}
+
+function EdgeShapeImpl({
+  edge,
+  from,
+  to,
+  bow,
+  selected,
+  double,
+  definingAttribute,
+  onPointerDown,
+}: Props) {
   const g = edgeGeometry(from, to, bow);
   const faint = edge.kind === 'attribute';
 
@@ -50,6 +86,20 @@ function EdgeShapeImpl({ edge, from, to, bow, selected, double, onPointerDown }:
   // recursive relationship do not stack their labels on top of each other.
   const roleOff = bow === 0 ? -off : Math.sign(bow) * (off + 4);
 
+  // A subclass line and a category line both carry ⊂, opening towards the
+  // marker at the target end — the superclass side in both cases.
+  let subset: string | null = null;
+  if (edge.kind === 'isa-sub' || edge.kind === 'union-sub') {
+    const dx = g.end.x - g.start.x;
+    const dy = g.end.y - g.start.y;
+    const len = Math.hypot(dx, dy) || 1;
+    // Nearer the subclass than the marker: that is where textbooks put it, and
+    // it keeps the glyph clear of the marker on short lines.
+    subset = subsetPath(lerp(g.start, g.end, 0.42), dx / len, dy / len);
+  }
+
+  const midAt = lerp(g.start, g.end, 0.5);
+
   return (
     <g
       className={`edge e-${edge.kind}${selected ? ' selected' : ''}`}
@@ -57,6 +107,7 @@ function EdgeShapeImpl({ edge, from, to, bow, selected, double, onPointerDown }:
       onPointerDown={(e) => onPointerDown?.(e, edge)}
     >
       {lines}
+      {subset && <path className="subset-symbol" d={subset} />}
       <path className="edge-hit" d={g.path} />
       {card && (
         <text
@@ -74,6 +125,15 @@ function EdgeShapeImpl({ edge, from, to, bow, selected, double, onPointerDown }:
           y={roleAt.y + g.normal.y * roleOff}
         >
           {edge.role}
+        </text>
+      )}
+      {definingAttribute && (
+        <text
+          className="edge-label defining"
+          x={midAt.x + g.normal.x * (off + 2)}
+          y={midAt.y + g.normal.y * (off + 2)}
+        >
+          {definingAttribute}
         </text>
       )}
     </g>

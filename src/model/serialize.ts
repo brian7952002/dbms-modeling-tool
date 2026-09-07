@@ -1,4 +1,5 @@
-import type { Diagram, DiagramFile } from './types';
+import type { Diagram, DiagramFile, DiagramNode } from './types';
+import { isaSize } from './measure';
 
 export const FILE_FORMAT = 'eer-diagram-designer';
 
@@ -22,8 +23,14 @@ export function fromFile(raw: unknown): { diagram: Diagram; title: string } {
   // Drop edges whose endpoints are missing rather than rendering broken lines.
   const ids = new Set(d.nodes.map((n) => n.id));
   const edges = d.edges.filter((e) => ids.has(e.source) && ids.has(e.target));
+  // A specialisation marker's box has to match the symbol it draws, or the
+  // connector clipping is computed against the wrong outline. Files written
+  // before the circle form existed carry triangle dimensions.
+  const nodes: DiagramNode[] = d.nodes.map((n) =>
+    n.kind === 'isa' ? { ...n, ...isaSize(n.symbol) } : n,
+  );
   return {
-    diagram: { nodes: d.nodes, edges },
+    diagram: { nodes, edges },
     title: typeof f.title === 'string' && f.title ? f.title : 'Untitled diagram',
   };
 }

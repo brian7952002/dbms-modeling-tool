@@ -22,7 +22,10 @@ No installation for the people using it: it is a static site, so a URL is enough
 | Cardinality | `1 : N : M` ratio labels and `(min,max)` structural constraints |
 | Total participation | Double line |
 | Recursive relationship | Two legs to one diamond, fanned apart, each with a role name |
-| Specialisation | ISA triangle carrying `d` (disjoint) or `o` (overlapping); double line for total |
+| Specialisation | Circle carrying `d` (disjoint) or `o` (overlapping), or a triangle if your course uses that form; double line for total |
+| Subset inclusion | `⊂` on every subclass line and on a category line, opening towards the superclass |
+| Attribute-defined specialisation | The defining attribute labelled on the superclass line |
+| Shared subclass | One entity may be a subclass under several specialisations |
 | Union / category | `∪` circle joining several unrelated superclasses to one subclass |
 
 **A model checker that runs as you draw.** Missing keys, weak entities with no identifying

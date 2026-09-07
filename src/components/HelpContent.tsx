@@ -23,9 +23,11 @@ const NOTATION: [string, string][] = [
   ['Double line', 'Total participation: every instance must take part.'],
   ['1 / N / M labels', 'Cardinality ratio. One “1” side and one “N” side make a 1:N relationship.'],
   ['(min,max)', 'Structural constraint: how many relationship instances one entity instance joins.'],
-  ['Triangle with d or o', 'Specialisation. d = disjoint subclasses, o = overlapping.'],
-  ['Double line into a triangle', 'Total specialisation: every superclass member is in some subclass.'],
-  ['Circle with ∪', 'Union / category type: a subclass drawn from several unrelated superclasses.'],
+  ['Circle with d or o', 'Specialisation. d = disjoint subclasses, o = overlapping. Switch it to a triangle in the inspector if your course uses that form.'],
+  ['⊂ on a subclass line', 'Subset inclusion: every member of the subclass is a member of the superclass. The opening always faces the superclass.'],
+  ['Double line into the marker', 'Total specialisation: every superclass member belongs to some subclass.'],
+  ['Label on the superclass line', 'Attribute-defined specialisation — the defining attribute, e.g. Job_type.'],
+  ['Circle with ∪', 'Union / category type: a subclass drawn from several unrelated superclasses. Its line also carries ⊂.'],
 ];
 
 export function HelpContent() {
@@ -66,9 +68,20 @@ export function HelpContent() {
       <section>
         <h3>Specialisation and union types</h3>
         <p>
-          Drop an <strong>ISA</strong> triangle, connect the superclass first, then each subclass. The
-          triangle rotates so its apex points at the superclass. Set disjoint/overlapping and
-          total/partial in the inspector.
+          Drop an <strong>ISA</strong> marker, connect the superclass first, then each subclass. Each
+          subclass line is drawn with the subset symbol <strong>⊂</strong>, whose opening faces the
+          superclass — every subclass member is a member of the superclass. Set
+          disjoint/overlapping, total/partial, and the defining attribute in the inspector.
+        </p>
+        <p>
+          The marker is a circle carrying <em>d</em> or <em>o</em>, as Elmasri &amp; Navathe draw it.
+          If your course uses the triangle form instead, switch it under <strong>Symbol</strong> —
+          the triangle rotates so its apex points at the superclass.
+        </p>
+        <p>
+          One entity may be a subclass under several specialisations. That is a{' '}
+          <strong>shared subclass</strong>, and the SQL mapping takes its key from the first
+          superclass and references the rest.
         </p>
         <p>
           A <strong>union</strong> circle is for a category whose members come from unrelated

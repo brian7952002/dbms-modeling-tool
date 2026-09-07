@@ -22,6 +22,8 @@ export function polygonOf(n: DiagramNode): Point[] | null {
         { x: n.x - hw, y: n.y },
       ];
     case 'isa':
+      // The circle form is an ellipse; only the triangle form is a polygon.
+      if (n.symbol !== 'triangle') return null;
       return [
         { x: n.x, y: n.y - hh },
         { x: n.x + hw, y: n.y + hh },

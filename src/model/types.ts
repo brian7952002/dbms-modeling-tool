@@ -60,6 +60,14 @@ export interface IsaNode extends NodeBase {
   disjoint: boolean;
   /** true = total specialisation (double line to the superclass). */
   total: boolean;
+  /**
+   * Which shape carries the d/o marker. Elmasri & Navathe draw a circle;
+   * other texts use a triangle labelled ISA. Undefined means circle, which is
+   * the form the subset symbols on the subclass lines belong to.
+   */
+  symbol?: 'circle' | 'triangle';
+  /** Attribute-defined specialisation: the defining attribute's name. */
+  definingAttribute?: string;
 }
 
 /** Union / category type: a subclass whose members come from several superclasses. */

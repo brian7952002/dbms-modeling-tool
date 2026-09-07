@@ -4,7 +4,7 @@ import {
   entities,
   identifyingOwner,
   isaNodes,
-  isaParentOf,
+  isaParentsOf,
   keyAttributes,
   leafColumns,
   participantsOf,
@@ -139,6 +139,8 @@ export function generateDdl(d: Diagram, title = 'EER Model'): DdlResult {
   const tableNames = new Set<string>();
   /** entity id -> its table */
   const entityTable = new Map<Id, Table>();
+  /** Extra superclass links, added once every primary key is resolved. */
+  const sharedSubclasses: { entity: EntityNode; extraParents: { id: Id }[] }[] = [];
 
   const tableNameFor = (raw: string) => uniqueName(tableNames, safeIdent(raw));
 
@@ -193,8 +195,11 @@ export function generateDdl(d: Diagram, title = 'EER Model'): DdlResult {
   function computePk(entity: EntityNode): { name: string; type: string }[] {
     const t = entityTable.get(entity.id)!;
 
-    // Subclass: inherits the superclass key.
-    const isa = isaParentOf(d, entity.id);
+    // Subclass: inherits the superclass key. A shared subclass has several
+    // parents; the first supplies the key and the rest become plain foreign
+    // keys, which is the usual mapping for multiple inheritance.
+    const parents = isaParentsOf(d, entity.id);
+    const isa = parents[0];
     if (isa) {
       const sup = superclassOf(d, isa.id);
       if (sup) {
@@ -216,6 +221,12 @@ export function generateDdl(d: Diagram, title = 'EER Model'): DdlResult {
             refColumns: supPk.map((c) => c.name),
             onDelete: 'CASCADE',
           });
+        }
+        if (parents.length > 1) {
+          notes.push(
+            `"${entity.name}" is a shared subclass of ${parents.length} specialisations; it takes its key from "${sup.name}" and references the other superclasses separately.`,
+          );
+          sharedSubclasses.push({ entity, extraParents: parents.slice(1) });
         }
         return cols;
       }
@@ -319,6 +330,33 @@ export function generateDdl(d: Diagram, title = 'EER Model'): DdlResult {
   for (const e of entities(d)) {
     const t = entityTable.get(e.id)!;
     t.pk = pkOf(e).map((c) => c.name);
+  }
+
+  // Extra parents of a shared subclass, now that every key is known.
+  for (const { entity, extraParents } of sharedSubclasses) {
+    const t = entityTable.get(entity.id)!;
+    for (const parent of extraParents) {
+      const sup = superclassOf(d, parent.id);
+      if (!sup) continue;
+      const supPk = pkOf(sup);
+      const supTable = entityTable.get(sup.id)!;
+      const cols = supPk.map((c) =>
+        addColumn(t, {
+          name: prefixed(sup.name, c.name),
+          type: c.type,
+          notNull: true,
+          comment: `also a subclass of ${supTable.name}`,
+        }),
+      );
+      if (cols.length > 0) {
+        t.fks.push({
+          columns: cols,
+          refTable: supTable.name,
+          refColumns: supPk.map((c) => c.name),
+          onDelete: 'CASCADE',
+        });
+      }
+    }
   }
 
   /* ---- Pass 2: non-key attributes and multivalued attribute tables ------ */
