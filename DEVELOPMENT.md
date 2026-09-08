@@ -352,12 +352,23 @@ convergence check without touching Yjs directly. Better still, write it as a tes
 
 ### Tests
 
-162 tests across eight files; `npm test` runs them in about a second.
+204 tests across nine files; `npm test` runs them in about three seconds.
 
 `src/platform/collab/doc.test.ts` covers concurrent rename-plus-move on one shape, conflicting writes
 to one field, a delete racing an edit, dangling-edge cleanup, three-way convergence, and undo
 reverting only its own author's work. Run `npm test` after touching anything in
 `src/platform/collab/`.
+
+`src/platform/Canvas.test.tsx` covers the interaction layer: selection, dragging with its single
+undo step per gesture, grid snapping, marquee, the connect tool, palette drops, inline rename, and
+pan/zoom. It is the only test file needing a DOM, so it opts in with a `// @vitest-environment jsdom`
+docblock rather than slowing the rest down — everything else stays on the default node environment.
+
+`src/test/dom.ts` holds the shims jsdom is missing: `PointerEvent`, `DragEvent`, and pointer capture.
+It deliberately does **not** stub `getBoundingClientRect` — jsdom's all-zero rect puts the origin at
+zero, so with an unscaled viewport client coordinates *are* diagram coordinates and the arithmetic
+under test stays readable in the assertions. It does stub `getContext` to `null`, which pins text
+measurement to the fallback in `measure.ts` so shape geometry never depends on installed fonts.
 
 Every model's checker has its own `validate.test.ts` (the physical one lives in `physical.test.ts`)
 built on a small scene builder, so a rule is added by writing the diagram that should trip it. Each
@@ -375,9 +386,9 @@ not. Check that Realtime is enabled for the project if peers never appear.
 
 1. **Two-browser check of real-time** (§7) — the one thing convergence tests cannot prove, and the
    only substantial unknown left in the project.
-2. **Extend test coverage** to `platform/Canvas.tsx` interaction, which has none — dragging,
-   marquee selection, edge creation. Needs a DOM environment; the rest of the suite runs headless.
-   *(The `validate.ts` rules are now covered — see §7.)*
+2. **Extend test coverage** to the parts still untested: `App.tsx` wiring, the inspectors, and
+   `cloud/` (which would need the API stubbed). *(The `validate.ts` rules and `Canvas.tsx`
+   interaction are now covered — see §7.)*
 3. Turn on the free-plan password settings (§4): minimum length and required character classes.
 4. Rename the Supabase project to match (cosmetic; the database, keys and URL are unaffected).
 
