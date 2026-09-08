@@ -28,6 +28,11 @@ jobs:
 
       - run: npm ci
 
+      # Before the build, so a red test stops the deploy instead of shipping
+      # past it. Needs no secrets: nothing here talks to Supabase.
+      - name: Test
+        run: npm test
+
       - name: Build
         env:
           # Set these under Settings -> Secrets and variables -> Actions.
