@@ -404,15 +404,20 @@ to prepare for something else is broadcast. Prepare a new document instead.
 `provider.test.ts` now runs the real provider over a stand-in channel, and `session.test.ts` covers
 the protocol and the reset seam, so neither can regress quietly.
 
-### Still not verified
+### Verified in two browsers, 8 September 2026
 
-Cursors and presence under genuine network conditions. Check that Realtime is enabled for the
-project if peers never appear.
+Two accounts in one diagram, edits flowing **both ways**. That was the symptom the one-directional
+sync caused, so the fix is confirmed against the real Supabase Realtime transport and not only
+against the stand-in channel in the tests. This was the project's last substantial unknown.
+
+Still confirmed only by test, not by hand: switching to another diagram leaving the other person
+untouched, and cursors and presence under genuine network conditions. Check that Realtime is enabled
+for the project if peers never appear.
 
 ## 8. Backlog, in the order I would do it
 
-1. **Re-run the two-browser check** now the session bugs in §7 are fixed: two accounts, one diagram,
-   edits flowing both ways, and a switch to another diagram leaving the other person untouched.
+1. **Finish the two-browser check** — edits both ways is done (§7). Left to try by hand: switching
+   to another diagram while someone else is in the first, and whether cursors actually appear.
 2. **Extend test coverage** to the parts still untested: `App.tsx` wiring, the inspectors, and
    `cloud/` (which would need the API stubbed). *(The `validate.ts` rules and `Canvas.tsx`
    interaction are now covered — see §7.)*
