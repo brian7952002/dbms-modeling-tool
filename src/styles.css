@@ -793,3 +793,18 @@ button.icon:hover { background: var(--ui-hover); }
   font-size: 11px;
 }
 .inspector button.link.danger { color: var(--ui-danger); border: none; }
+
+/* ---------- account chip ---------- */
+
+.account-chip { display: flex; align-items: center; gap: 6px; }
+.account-chip .avatar {
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--ui-accent);
+  color: var(--ui-accent-ink);
+  font-size: 10.5px;
+  font-weight: 700;
+}

@@ -267,9 +267,18 @@ export function Toolbar({
         type="button"
         className="account-chip"
         onClick={act('account')}
-        title={userEmail ? 'Account' : 'Sign in to save diagrams to your account'}
+        title={userEmail ? 'Account settings' : 'Sign in to save diagrams to your account'}
       >
-        {userEmail ? userEmail.split('@')[0] : 'Sign in'}
+        {userEmail ? (
+          <>
+            <span className="avatar" aria-hidden>
+              {userEmail.slice(0, 1).toUpperCase()}
+            </span>
+            {userEmail.split('@')[0]}
+          </>
+        ) : (
+          'Sign in'
+        )}
       </button>
 
       <button type="button" onClick={act('toggle-theme')} title="Switch light / dark">

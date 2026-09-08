@@ -12,6 +12,8 @@ interface AuthValue {
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   sendPasswordReset: (email: string) => Promise<void>;
+  /** Verifies the current password before setting the new one. */
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthValue | null>(null);
@@ -36,6 +38,14 @@ function friendly(message: string): string {
   }
   if (m.includes('rate limit') || m.includes('too many')) {
     return 'Too many attempts just now. Wait a minute and try again.';
+  }
+  // Raised when leaked-password protection is on and the password appears in a
+  // known breach.
+  if (m.includes('pwned') || m.includes('known to be weak') || m.includes('compromis')) {
+    return 'That password appears in a known data breach. Pick a different one.';
+  }
+  if (m.includes('should be different from the old')) {
+    return 'That is the password you already have.';
   }
   return message;
 }
@@ -89,6 +99,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       async signOut() {
         await supabase?.auth.signOut();
+      },
+
+      async changePassword(currentPassword, newPassword) {
+        const client = supabase!;
+        const email = session?.user?.email;
+        if (!email) throw new Error('You are not signed in.');
+
+        // Re-authenticate first: a session alone should not be enough to
+        // change the password on a machine somebody walked away from.
+        const { error: checkError } = await client.auth.signInWithPassword({
+          email,
+          password: currentPassword,
+        });
+        if (checkError) {
+          throw new Error(
+            checkError.message.toLowerCase().includes('invalid login')
+              ? 'That is not your current password.'
+              : friendly(checkError.message),
+          );
+        }
+
+        const { error } = await client.auth.updateUser({ password: newPassword });
+        if (error) throw new Error(friendly(error.message));
       },
 
       async sendPasswordReset(email) {

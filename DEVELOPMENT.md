@@ -125,6 +125,18 @@ SQL; re-run that style of check after touching policies.
 Every `SECURITY DEFINER` function re-checks permission explicitly, because DEFINER bypasses RLS.
 Errors use a `PTxyz` SQLSTATE, which PostgREST returns as HTTP `xyz`.
 
+### Account management
+
+Clicking the account chip opens a panel with the display name, a password change and sign out. The
+display name is what teammates see in history and activity, so it is worth setting.
+
+Changing a password **re-authenticates first**: the current password is verified with
+`signInWithPassword` before `updateUser` is called. A session alone should not be enough to change
+the password on a machine somebody walked away from.
+
+This is also the only place leaked-password protection is observable from the app — if it is on,
+Supabase rejects a breached password and the panel says so.
+
 ### Outstanding dashboard items (not reachable via the connector)
 
 - Enable leaked-password protection (Authentication ▸ Policies).
@@ -333,7 +345,9 @@ not. Check that Realtime is enabled for the project if peers never appear.
 1. **Two-browser check of real-time** (§7) — the one thing convergence tests cannot prove.
 2. **Extend test coverage** to the remaining `validate.ts` rules, and to `platform/Canvas.tsx`
    interaction, which has none.
-3. Rename the Supabase project (cosmetic; the database and keys are unaffected) (§5): the interface says DBMS Modeling, the repo and file format still say
+3. Rename the Supabase project (cosmetic; the database and keys are unaffected)
+4. Confirm leaked-password protection actually saved — the advisor is cached, and the only
+   definitive test is trying to set a breached password from the account panel (§5): the interface says DBMS Modeling, the repo and file format still say
    eer-diagram-designer.
 
 ---
