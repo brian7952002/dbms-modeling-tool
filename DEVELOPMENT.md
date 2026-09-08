@@ -21,9 +21,9 @@ cleared: it records what exists, what is decided and why, what is broken, and wh
 JSON/SVG/PNG export, share links, accounts, team projects with roles, invite links, version history
 with attribution, activity feed, real-time collaborative editing with cursors and per-user undo.
 
-**Ecosystem:** the platform/model seam carries three tools — EER, instance diagrams, and the
-relational schema. Only the physical model is left; it is a `ModelTool` and a line in
-`ecosystem/models.ts`.
+**Ecosystem:** complete. The platform/model seam carries all four tools — EER, instance diagrams,
+the relational schema, and the physical design — and the three stages of the design process chain
+into each other: conceptual → logical → physical.
 
 ---
 
@@ -143,7 +143,7 @@ modelling tools**, matching the design process in Elmasri & Navathe.
 | --- | --- | --- |
 | Conceptual | EER diagram — entities, relationships, specialisation | Built |
 | Logical / implementation | Relational schema — tables, columns, keys, referential integrity | Built |
-| Physical | Storage and access — indexes, file organisation, partitioning, per-DBMS types | Not started |
+| Physical | Storage and access — file organisation, indexes, block-access cost | Built |
 
 Instance diagrams (§6) belong to the conceptual family: sample data illustrating an EER model.
 
@@ -160,7 +160,7 @@ src/
     eer/        conceptual
     instance/   sample data for an EER model
     relational/ logical
-    physical/   physical (not written)
+    physical/   physical
   cloud/        unchanged
 ```
 
@@ -252,6 +252,31 @@ table or column names, foreign keys with mismatched column counts, foreign keys 
 something neither primary nor unique, and type mismatches. Its SQL generator emits tables in
 dependency order and reports reference cycles rather than looping.
 
+## 6b. The physical model
+
+Built. `models/physical/`.
+
+Each relation becomes a **stored file** with an organisation (heap, sequential, hash, clustered),
+a row count, a record size, a block size and a fill factor. **Indexes** attach to files: B+-tree,
+hash or bitmap; unique or not; clustering or secondary.
+
+**The estimates are the point.** `estimates.ts` computes blocking factor, block count, and the
+block accesses needed to reach one record — linear for a heap, `log₂(b)` for an ordered file,
+near-constant for a hash, tree levels plus one for an index. It is textbook arithmetic (uniform
+records, no buffering, one block per access), not a query planner, and the help says so. The
+absolute numbers are idealised; the ratios are right, and the ratios are what the decision turns on.
+
+Generated from the relational model by `fromRelational.ts`: every table becomes a file, its primary
+key gets a unique clustering index, and each foreign key gets a secondary index — except where the
+foreign key *is* the primary key, as on a subclass table, where the clustering index already serves
+it. That exception exists because the first version generated the duplicate and its own checker
+caught it; there is now a test asserting the generator produces nothing its checker complains about.
+
+The checker covers what makes a physical design impossible or pointless: two clustering indexes on
+one file, a clustering index on a hashed file, a large heap with no index, duplicate indexes,
+records larger than a block, and — with a relational schema linked — index or key columns the table
+does not have, and a primary key with no fast access path.
+
 ## 7. Real-time collaboration
 
 Shipped. Yjs CRDT over Supabase Realtime, with no server component.
@@ -297,10 +322,9 @@ not. Check that Realtime is enabled for the project if peers never appear.
 ## 8. Backlog, in the order I would do it
 
 1. **Two-browser check of real-time** (§7) — the one thing convergence tests cannot prove.
-2. **Physical model** — the last of the three. Indexes, file organisation, partitioning, per-DBMS
-   types. It should derive from the relational model the way that derives from the conceptual one.
-3. **Extend test coverage** to the remaining `validate.ts` rules.
-4. Finish the rename (§5): the interface says DBMS Modeling, the repo and file format still say
+2. **Extend test coverage** to the remaining `validate.ts` rules, and to `platform/Canvas.tsx`
+   interaction, which has none.
+3. Finish the rename (§5): the interface says DBMS Modeling, the repo and file format still say
    eer-diagram-designer.
 
 ---
@@ -324,5 +348,6 @@ Recorded so they are not re-argued.
 | Instance diagrams built before logical/physical | Cheapest second tool, so the seam is tested early rather than assumed |
 | The relational model generated from the shared mapping | The diagram and the SQL cannot disagree if neither owns the algorithm |
 | Relational columns stored one per CRDT key | Same reason node fields are: an array makes concurrent column edits last-write-wins |
+| Physical estimates kept textbook-simple | Idealised absolutes, correct ratios; a fake query planner would mislead more than it helps |
 | Cursors + selection highlights | Chosen as part of the real-time work |
 | Instance diagrams linked with constraint checking | Turns them into a way to test the model, not just draw it |

@@ -1,6 +1,7 @@
 import type { Decorations, ModelTool } from '../../ecosystem/registry';
 import { companySample } from '../eer/samples';
 import { relationalFromEer } from './fromEer';
+import { physicalFromRelational } from '../physical/fromRelational';
 import { generateDdl } from './ddl';
 import { validate } from './validate';
 import {
@@ -90,6 +91,12 @@ export const relationalModel: ModelTool<DiagramNode, Edge> = {
   sizeFor: (node, name) => sizeForTable(name, readColumns(node)),
 
   validate: (diagram) => validate(diagram),
+
+  derive: {
+    to: 'physical',
+    label: 'Generate physical model',
+    build: (diagram) => physicalFromRelational(diagram),
+  },
 
   exports: {
     sql: (diagram, title) => generateDdl(diagram, title),

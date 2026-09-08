@@ -2,6 +2,7 @@ import { registerModel } from './registry';
 import { eerModel } from '../models/eer';
 import { instanceModel } from '../models/instance';
 import { relationalModel } from '../models/relational';
+import { physicalModel } from '../models/physical';
 
 /**
  * The ecosystem's contents. Adding the logical or physical model means writing
@@ -10,5 +11,6 @@ import { relationalModel } from '../models/relational';
 registerModel(eerModel);
 registerModel(instanceModel);
 registerModel(relationalModel);
+registerModel(physicalModel);
 
 export {};

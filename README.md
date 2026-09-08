@@ -45,10 +45,17 @@ disjoint specialisation — are called out as warnings rather than silently drop
 link that carries the entire diagram in the URL, and optional accounts with a private cloud library.
 
 **Three models, one project.** The design process has three stages and this has a tool for each:
-the **conceptual** EER diagram, the **logical** relational schema, and instance diagrams that test
-either. Pick one from the model switcher; they live together in a project. **File ▸ Generate
+the **conceptual** EER diagram, the **logical** relational schema, and the **physical** design —
+plus instance diagrams that test the conceptual one. Each stage generates the next: **Generate
 relational model** maps an EER diagram to tables using the same code that produces the SQL, so the
-diagram and the script cannot disagree.
+diagram and the script cannot disagree, and **Generate physical model** turns those tables into
+stored files with clustering and foreign-key indexes.
+
+**Physical design with real numbers.** Each stored file carries its organisation, row count and
+record size, and shows the blocking factor, block count and block accesses needed to find one
+record — linear for a heap, `log₂(b)` for an ordered file, tree levels plus one through an index.
+The arithmetic is the textbook kind rather than a query planner, so the absolute figures are
+idealised, but the ratios are right and the ratios are what the choice turns on.
 
 **Instance diagrams, checked against the schema.** Draw a handful of sample rows for an EER model
 and the checker holds them against its constraints: an instance joined to two owners where the
