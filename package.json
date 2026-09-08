@@ -1,9 +1,9 @@
 {
-  "name": "eer-diagram-designer",
+  "name": "dbms-modeling-tool",
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "A browser-based drag-and-drop designer for Enhanced Entity-Relationship (EER) diagrams in Chen notation.",
+  "description": "Browser-based modelling tool for database design: conceptual EER, logical relational and physical storage models, with live checking and SQL generation.",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",

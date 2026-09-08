@@ -41,8 +41,11 @@ export interface Diagram<N extends BaseNode = BaseNode, E extends BaseEdge = Bas
   edges: E[];
 }
 
+/** Written by the current version; `eer-diagram-designer` is the legacy name. */
+export type FileFormat = 'dbms-modeling-tool' | 'eer-diagram-designer';
+
 export interface DiagramFile<D extends Diagram = Diagram> {
-  format: 'eer-diagram-designer';
+  format: FileFormat;
   version: 1;
   title: string;
   /** Which model this diagram belongs to. Absent in files written before models existed. */

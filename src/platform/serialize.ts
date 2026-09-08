@@ -1,6 +1,15 @@
 import type { Diagram, DiagramFile } from './types';
 
-export const FILE_FORMAT = 'eer-diagram-designer';
+export const FILE_FORMAT = 'dbms-modeling-tool';
+
+/**
+ * Files written before the rename. Read forever: a saved diagram outliving a
+ * product name is the least a file format can promise.
+ */
+const LEGACY_FORMATS = ['eer-diagram-designer'];
+
+const isKnownFormat = (format: unknown): boolean =>
+  format === FILE_FORMAT || LEGACY_FORMATS.includes(format as string);
 
 export function toFile(diagram: Diagram, title: string, model = 'eer'): DiagramFile {
   return { format: FILE_FORMAT, version: 1, title, model, diagram };
@@ -12,8 +21,8 @@ export function fromFile(raw: unknown): { diagram: Diagram; title: string; model
     throw new Error('That file does not contain a diagram.');
   }
   const f = raw as Partial<DiagramFile>;
-  if (f.format !== FILE_FORMAT) {
-    throw new Error('That file was not saved by EER Diagram Designer.');
+  if (!isKnownFormat(f.format)) {
+    throw new Error('That file was not saved by DBMS Modeling Tool.');
   }
   const d = f.diagram;
   if (!d || !Array.isArray(d.nodes) || !Array.isArray(d.edges)) {

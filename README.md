@@ -1,8 +1,12 @@
-# EER Diagram Designer
+# DBMS Modeling Tool
 
-A browser-based, drag-and-drop editor for **Enhanced Entity-Relationship diagrams** in Chen
-notation — built for practising database design. It draws the notation properly, checks the model
-as you build it, and maps the finished diagram to a relational schema.
+A browser-based modelling tool covering all three stages of database design — the **conceptual**
+EER diagram, the **logical** relational schema and the **physical** storage design — built for
+practising the process end to end. It draws each notation properly, checks the model as you build
+it, and generates the next stage from the one before.
+
+Formerly *EER Diagram Designer*; the repository moved with the name, and links handed out under the
+old address still work.
 
 No installation for the people using it: it is a static site, so a URL is enough.
 

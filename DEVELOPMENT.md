@@ -11,8 +11,8 @@ cleared: it records what exists, what is decided and why, what is broken, and wh
 
 | | |
 | --- | --- |
-| Live site | https://brian7952002.github.io/eer-diagram-designer/ |
-| Repo | https://github.com/brian7952002/eer-diagram-designer (public) |
+| Live site | https://brian7952002.github.io/dbms-modeling-tool/ |
+| Repo | https://github.com/brian7952002/dbms-modeling-tool (public) |
 | Supabase project ref | `mftxzxdnkozkfpzwryfe` |
 | Deploy | GitHub Actions → Pages, on push to `main` |
 | Branch `main` | Working. Real-time CRDT collaboration. |
@@ -194,10 +194,19 @@ for cross-model links (instance → eer, relational → eer, physical → relati
 
 ### Naming
 
-Proposed: **DBMS Modeling Tool**. Renaming the GitHub repo would change the Pages URL and **break
-every share link already handed out**, since links are `…github.io/<repo>/#c=<id>`. Recommended:
-change the displayed product name only and leave the repo slug alone. Revisit if the URL matters
-more than the existing links.
+Done. The product is **DBMS Modeling Tool** and the repository is `dbms-modeling-tool`.
+
+Renaming the repo moved the Pages URL, and GitHub does **not** redirect old project-page URLs — so
+every share link handed out under the old address would have died. Links are
+`…github.io/<repo>/#c=<id>`, and the diagram lives in the fragment.
+
+The old slug is therefore held by a second repository serving one page, which forwards to the new
+address **preserving `location.hash`**. Old links keep working, including `#d=` share links that
+carry a whole diagram and `#join=` invite links. Do not delete that repository; it is the only thing
+keeping those links alive.
+
+The file format keeps reading `eer-diagram-designer` and writes `dbms-modeling-tool`; there is a
+test for it.
 
 ---
 
@@ -324,7 +333,7 @@ not. Check that Realtime is enabled for the project if peers never appear.
 1. **Two-browser check of real-time** (§7) — the one thing convergence tests cannot prove.
 2. **Extend test coverage** to the remaining `validate.ts` rules, and to `platform/Canvas.tsx`
    interaction, which has none.
-3. Finish the rename (§5): the interface says DBMS Modeling, the repo and file format still say
+3. Rename the Supabase project (cosmetic; the database and keys are unaffected) (§5): the interface says DBMS Modeling, the repo and file format still say
    eer-diagram-designer.
 
 ---
