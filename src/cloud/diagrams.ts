@@ -114,6 +114,31 @@ export async function persistRealtime(
   return { version: row.version as number, updatedAt: row.updated_at as string };
 }
 
+/**
+ * Columns a signed-out visitor may read. Deliberately narrower than META:
+ * `project_id` and `updated_by` would say which team a diagram belongs to and
+ * who last touched it, which a published link has no business revealing.
+ */
+const PUBLIC_META = 'id,title,is_public,created_at,updated_at,kind,source_diagram_id';
+
+/**
+ * Opens a published diagram as an anonymous visitor.
+ *
+ * Requesting a column the anon role cannot read fails the whole query, so this
+ * asks for exactly what the column grants allow — no more.
+ */
+export async function openPublishedDiagram(
+  id: string,
+): Promise<{ diagram: Diagram; title: string }> {
+  const { data, error } = await requireClient()
+    .from(TABLE)
+    .select(`${PUBLIC_META},data`)
+    .eq('id', id)
+    .single();
+  if (error) throw new Error(error.message);
+  return fromFile((data as Row).data);
+}
+
 export async function openDiagram(
   id: string,
 ): Promise<{ meta: CloudDiagram; diagram: Diagram; title: string }> {

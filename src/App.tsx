@@ -29,6 +29,7 @@ import {
   createDiagram,
   listDiagrams,
   openDiagram,
+  openPublishedDiagram,
   persistRealtime,
   type CloudDiagram,
 } from './cloud/diagrams';
@@ -488,7 +489,8 @@ export default function App() {
     }
 
     if (hash.startsWith('#c=')) {
-      openDiagram(hash.slice(3))
+      // A share link is opened by whoever has it, signed in or not.
+      openPublishedDiagram(hash.slice(3))
         .then(({ diagram: shared, title: sharedTitle }) => {
           setCloudDoc(null);
           show(shared, sharedTitle, `Opened a shared copy of “${sharedTitle}”.`);

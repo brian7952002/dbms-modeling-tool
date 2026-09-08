@@ -1,5 +1,5 @@
 -- ---------------------------------------------------------------------------
--- EER Diagram Designer — Supabase schema
+-- DBMS Modeling Tool — Supabase schema
 --
 -- Run this once in your Supabase project: SQL Editor -> New query -> paste ->
 -- Run. Every statement is idempotent, so it is safe to run again after an
@@ -139,7 +139,26 @@ create table if not exists public.diagrams (
 alter table public.diagrams
   add column if not exists project_id uuid references public.projects (id) on delete cascade,
   add column if not exists version    integer not null default 1,
-  add column if not exists updated_by uuid references auth.users (id) on delete set null;
+  add column if not exists updated_by uuid references auth.users (id) on delete set null,
+  -- Which model this diagram belongs to, and the diagram it is derived from
+  -- or checked against.
+  add column if not exists kind text not null default 'eer',
+  add column if not exists source_diagram_id uuid references public.diagrams (id) on delete set null,
+  -- The CRDT state, base64-encoded. `data` stays the plain JSON that exports,
+  -- published links and the SQL generators read.
+  add column if not exists ydoc text;
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'diagrams_kind_check') then
+    alter table public.diagrams
+      add constraint diagrams_kind_check
+      check (kind in ('eer', 'instance', 'relational', 'physical'));
+  end if;
+end
+$$;
+
+create index if not exists diagrams_source_idx on public.diagrams (source_diagram_id);
 
 create index if not exists diagrams_owner_updated_idx on public.diagrams (owner, updated_at desc);
 create index if not exists diagrams_project_idx       on public.diagrams (project_id, updated_at desc);
@@ -215,10 +234,17 @@ as $$
   select public.project_role_of(p_project) in ('owner', 'editor')
 $$;
 
-revoke execute on function public.project_role_of(uuid, uuid) from public, anon;
-revoke execute on function public.can_edit_project(uuid)      from public, anon;
-grant  execute on function public.project_role_of(uuid, uuid) to authenticated;
-grant  execute on function public.can_edit_project(uuid)      to authenticated;
+revoke execute on function public.project_role_of(uuid, uuid) from public;
+revoke execute on function public.can_edit_project(uuid)      from public;
+
+-- Both roles need EXECUTE, including anon. Every SELECT policy on `diagrams`
+-- is evaluated for every reader, and the project one calls project_role_of();
+-- without EXECUTE a signed-out visitor opening a published link is refused by
+-- the policy machinery before row filtering happens. Granting it reveals
+-- nothing — the function answers only for auth.uid(), which is null without a
+-- JWT, so anonymous callers always get null back.
+grant execute on function public.project_role_of(uuid, uuid) to authenticated, anon;
+grant execute on function public.can_edit_project(uuid)      to authenticated, anon;
 
 -- ---------------------------------------------------------------------------
 -- Row-level security
@@ -393,7 +419,7 @@ create policy "read activity you can see"
 -- ---------------------------------------------------------------------------
 
 revoke select on public.diagrams from anon;
-grant select (id, title, data, is_public, created_at, updated_at)
+grant select (id, title, data, is_public, created_at, updated_at, kind, source_diagram_id)
   on public.diagrams to anon;
 
 -- ---------------------------------------------------------------------------
