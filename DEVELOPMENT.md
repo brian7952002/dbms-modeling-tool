@@ -414,6 +414,21 @@ Still confirmed only by test, not by hand: switching to another diagram leaving 
 untouched, and cursors and presence under genuine network conditions. Check that Realtime is enabled
 for the project if peers never appear.
 
+### Saving keeps a diagram private
+
+The toolbar's Save creates a diagram with no project. Putting one into a project is deliberate:
+"Save current here" with that project showing, or "Move into project" on a row.
+
+It did not start that way. Save followed whichever project was last opened, and that selection is
+sticky for the whole session and invisible from the toolbar — so opening a project once meant every
+diagram saved afterwards was silently readable and editable by everyone in it. Two accounts finding
+they could edit each other's "private" work is what surfaced it. Nothing was wrong in the database:
+RLS was checked against a second account's JWT and refused every write it should have refused. The
+mistake was that the app chose a sharing destination on the user's behalf and never said so.
+
+The status line now always ends in `private` or `shared in <project>`, because the one thing a
+person must never have to guess is who else can read what is on screen.
+
 ## 8. Backlog, in the order I would do it
 
 1. **Finish the two-browser check** — edits both ways is done (§7). Left to try by hand: switching

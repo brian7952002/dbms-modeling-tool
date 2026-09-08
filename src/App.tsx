@@ -383,16 +383,24 @@ export default function App() {
         bindCloudDoc({ ...cloudDoc, ...saved, title });
         notify('Saved.');
       } else {
+        // Saving keeps a diagram private. Sharing it is a separate, deliberate
+        // act — "Save current here" with a project showing, or "Move into
+        // project" on a row in the library.
+        //
+        // This button used to follow whichever project was last opened, which
+        // is sticky for the whole session and invisible from here: you picked a
+        // project once, and every diagram you saved afterwards was quietly
+        // readable and editable by everyone in it.
         const meta = await createDiagram(
           auth.user.id,
           diagram,
           title,
-          activeProject && canEdit(activeProject.role) ? activeProject.id : null,
+          null,
           modelId === 'instance' ? 'instance' : 'eer',
           sourceDiagramId,
         );
         bindCloudDoc(meta);
-        notify(`Saved “${meta.title}”.`);
+        notify(`Saved “${meta.title}” · private to your account.`);
       }
     } catch (err) {
       setCloudState('error');
@@ -923,7 +931,9 @@ export default function App() {
       case 'error':
         return 'Save failed';
       default:
-        return `Saved · ${cloudDoc.title}`;
+        return currentProject
+          ? `Saved · ${cloudDoc.title} · shared in ${currentProject.name}`
+          : `Saved · ${cloudDoc.title} · private`;
     }
   }, [auth.enabled, auth.user, cloudDoc, cloudState, currentProject, readOnly, peers.length, liveConnected]);
 
