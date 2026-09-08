@@ -39,7 +39,7 @@ export function validate(d: Diagram, context: ValidationContext): Issue[] {
   }
   for (const [name, ids] of byName) {
     if (ids.length > 1) {
-      add('warning', `${ids.length} entity sets are both named “${name}”.`, ids);
+      add('warning', `${ids.length} entity sets share the name “${name}”.`, ids);
     }
   }
 

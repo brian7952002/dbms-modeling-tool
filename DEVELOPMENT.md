@@ -352,9 +352,18 @@ convergence check without touching Yjs directly. Better still, write it as a tes
 
 ### Tests
 
-`src/platform/collab/doc.test.ts` covers concurrent rename-plus-move on one shape, conflicting writes to one
-field, a delete racing an edit, dangling-edge cleanup, three-way convergence, and undo reverting
-only its own author's work. Run `npm test` after touching anything in `src/platform/collab/`.
+162 tests across eight files; `npm test` runs them in about a second.
+
+`src/platform/collab/doc.test.ts` covers concurrent rename-plus-move on one shape, conflicting writes
+to one field, a delete racing an edit, dangling-edge cleanup, three-way convergence, and undo
+reverting only its own author's work. Run `npm test` after touching anything in
+`src/platform/collab/`.
+
+Every model's checker has its own `validate.test.ts` (the physical one lives in `physical.test.ts`)
+built on a small scene builder, so a rule is added by writing the diagram that should trip it. Each
+file also asserts that the samples the app ships raise **no errors** — that is what catches a rule
+that is too eager, which is the failure mode that matters here: a checker crying wolf on correct
+work teaches students to ignore it.
 
 ### Not yet verified
 
@@ -366,8 +375,9 @@ not. Check that Realtime is enabled for the project if peers never appear.
 
 1. **Two-browser check of real-time** (§7) — the one thing convergence tests cannot prove, and the
    only substantial unknown left in the project.
-2. **Extend test coverage** to the remaining `validate.ts` rules, and to `platform/Canvas.tsx`
-   interaction, which has none.
+2. **Extend test coverage** to `platform/Canvas.tsx` interaction, which has none — dragging,
+   marquee selection, edge creation. Needs a DOM environment; the rest of the suite runs headless.
+   *(The `validate.ts` rules are now covered — see §7.)*
 3. Turn on the free-plan password settings (§4): minimum length and required character classes.
 4. Rename the Supabase project to match (cosmetic; the database, keys and URL are unaffected).
 

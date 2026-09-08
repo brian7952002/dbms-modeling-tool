@@ -1,4 +1,4 @@
-import type { Diagram, Id } from './types';
+import type { Diagram, Id, NodeKind } from './types';
 import type { Issue, Severity } from '../../ecosystem/registry';
 import {
   attributesOf,
@@ -21,6 +21,16 @@ import {
 } from './graph';
 
 export type { Issue, Severity };
+
+const PLURAL: Record<NodeKind, string> = {
+  entity: 'entities',
+  relationship: 'relationships',
+  attribute: 'attributes',
+  isa: 'specialisations',
+  union: 'unions',
+};
+
+const plural = (kind: NodeKind) => PLURAL[kind] ?? `${kind}s`;
 
 /**
  * Structural checks against the rules of EER modelling. These are the mistakes
@@ -51,8 +61,11 @@ export function validate(d: Diagram): Issue[] {
   }
   for (const [key, ids] of seen) {
     if (ids.length > 1 && !key.startsWith('attribute:')) {
-      const [kind, label] = key.split(':');
-      add('warning', `${ids.length} ${kind}s share the name "${label}".`, ids);
+      const split = key.indexOf(':');
+      const kind = key.slice(0, split) as NodeKind;
+      // A name may itself contain a colon, so only the first one separates.
+      const label = key.slice(split + 1);
+      add('warning', `${ids.length} ${plural(kind)} share the name "${label}".`, ids);
     }
   }
 
