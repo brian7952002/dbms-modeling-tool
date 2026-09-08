@@ -8,6 +8,8 @@ interface Props {
   modelLabel: string;
   /** Worked examples offered by the open model. */
   samples: { id: string; title: string }[];
+  /** Label for producing the next model from this one, when it can. */
+  deriveLabel: string | null;
   tool: Tool;
   setTool: (t: Tool) => void;
   canUndo: boolean;
@@ -47,6 +49,7 @@ export type ToolbarAction =
   | 'toggle-theme'
   | 'toggle-issues'
   | 'models'
+  | 'derive'
   | 'library'
   | 'projects'
   | 'history'
@@ -85,6 +88,7 @@ export function Toolbar({
   title,
   modelLabel,
   samples,
+  deriveLabel,
   tool,
   setTool,
   canUndo,
@@ -127,6 +131,11 @@ export function Toolbar({
 
       <Menu label="File">
         <button type="button" onClick={act('models')}>Choose a model…</button>
+        {deriveLabel && (
+          <button type="button" onClick={act('derive')}>
+            {deriveLabel}
+          </button>
+        )}
         <hr />
         <button type="button" onClick={act('new')}>New diagram</button>
         <button type="button" onClick={act('open')}>Open .eer.json…</button>

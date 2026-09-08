@@ -21,8 +21,8 @@ cleared: it records what exists, what is decided and why, what is broken, and wh
 JSON/SVG/PNG export, share links, accounts, team projects with roles, invite links, version history
 with attribution, activity feed, real-time collaborative editing with cursors and per-user undo.
 
-**Ecosystem:** the platform/model seam exists and carries two tools — EER and instance diagrams.
-Logical and physical models are not written yet; each is a `ModelTool` and a line in
+**Ecosystem:** the platform/model seam carries three tools — EER, instance diagrams, and the
+relational schema. Only the physical model is left; it is a `ModelTool` and a line in
 `ecosystem/models.ts`.
 
 ---
@@ -142,7 +142,7 @@ modelling tools**, matching the design process in Elmasri & Navathe.
 | Model | Purpose | Status |
 | --- | --- | --- |
 | Conceptual | EER diagram — entities, relationships, specialisation | Built |
-| Logical / implementation | Relational schema — tables, columns, keys, referential integrity | Not started |
+| Logical / implementation | Relational schema — tables, columns, keys, referential integrity | Built |
 | Physical | Storage and access — indexes, file organisation, partitioning, per-DBMS types | Not started |
 
 Instance diagrams (§6) belong to the conceptual family: sample data illustrating an EER model.
@@ -160,7 +160,7 @@ src/
     eer/        conceptual
     instance/   sample data for an EER model
     relational/ logical
-    physical/   physical
+    physical/   physical (not written)
   cloud/        unchanged
 ```
 
@@ -226,6 +226,32 @@ travels with the diagram, and is mirrored to `diagrams.source_diagram_id`.
 
 Covered by `check.test.ts`.
 
+## 6a. The relational model
+
+Built. `models/relational/`.
+
+**Generated from the EER model, not reimplemented.** `models/eer/ddl.ts` was split into
+`mapToRelational()` — the seven-step algorithm producing a `RelationalSchema` — and a renderer that
+turns it into SQL. `models/relational/fromEer.ts` consumes the same structure and turns it into
+shapes. That is why the generated diagram and the generated SQL cannot disagree, and there is a test
+asserting they name the same tables and the same number of foreign keys.
+
+The action appears as **File ▸ Generate relational model** whenever the open model declares
+`derive` in the registry. It opens the result as a new diagram and leaves the source alone.
+
+**Columns are stored one per key.** A table node carries `columnOrder: string[]` plus a `col:<id>`
+entry per column, rather than an array. This keeps the CRDT property that made per-field storage
+worth it in the first place: two people renaming different columns of the same table do not
+overwrite each other. Read them with `readColumns()`; never touch the keys directly.
+
+A table's box is sized by its widest row — name, type, and the `FK`/NOT NULL markers that sit
+between them — so `sizeForTable` is called on every column edit, not only on rename.
+
+Its checker covers the faults that fail at `CREATE TABLE` time: relations with no key, duplicate
+table or column names, foreign keys with mismatched column counts, foreign keys referencing
+something neither primary nor unique, and type mismatches. Its SQL generator emits tables in
+dependency order and reports reference cycles rather than looping.
+
 ## 7. Real-time collaboration
 
 Shipped. Yjs CRDT over Supabase Realtime, with no server component.
@@ -271,12 +297,10 @@ not. Check that Realtime is enabled for the project if peers never appear.
 ## 8. Backlog, in the order I would do it
 
 1. **Two-browser check of real-time** (§7) — the one thing convergence tests cannot prove.
-2. **Extend test coverage** to `ddl.ts` mapping for each relationship shape, and the `validate.ts`
-   rules for both models.
-3. **Relational (logical) model.** Largely already implied by `models/eer/ddl.ts`: generating it
-   from an EER diagram is a strong starting point, with editing on top.
-4. **Physical model.**
-5. Finish the rename (§5): the interface says DBMS Modeling, the repo and file format still say
+2. **Physical model** — the last of the three. Indexes, file organisation, partitioning, per-DBMS
+   types. It should derive from the relational model the way that derives from the conceptual one.
+3. **Extend test coverage** to the remaining `validate.ts` rules.
+4. Finish the rename (§5): the interface says DBMS Modeling, the repo and file format still say
    eer-diagram-designer.
 
 ---
@@ -298,5 +322,7 @@ Recorded so they are not re-argued.
 | Node fields stored individually, not as a blob | A blob makes concurrent edits to one shape last-write-wins |
 | A model registry rather than branching on diagram kind | Adding a model must not mean editing the canvas |
 | Instance diagrams built before logical/physical | Cheapest second tool, so the seam is tested early rather than assumed |
+| The relational model generated from the shared mapping | The diagram and the SQL cannot disagree if neither owns the algorithm |
+| Relational columns stored one per CRDT key | Same reason node fields are: an array makes concurrent column edits last-write-wins |
 | Cursors + selection highlights | Chosen as part of the real-time work |
 | Instance diagrams linked with constraint checking | Turns them into a way to test the model, not just draw it |

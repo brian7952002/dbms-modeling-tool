@@ -77,6 +77,17 @@ export interface ModelTool<
    * diagram names 'eer' here so the platform can offer a source diagram.
    */
   derivesFrom?: ModelId;
+
+  /**
+   * Producing the next model in the design process from this one — a
+   * conceptual diagram becoming a logical schema. The platform offers it as an
+   * action and opens the result.
+   */
+  derive?: {
+    to: ModelId;
+    label: string;
+    build(diagram: Diagram<N, E>): { diagram: Diagram; notes?: string[]; warnings?: string[] };
+  };
 }
 
 export type ModelId = 'eer' | 'instance' | 'relational' | 'physical';

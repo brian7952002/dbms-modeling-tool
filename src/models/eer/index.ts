@@ -13,6 +13,7 @@ import { Inspector } from './Inspector';
 import { Help } from './Help';
 import { PALETTE } from './palette';
 import { eerOutline } from './outline';
+import { relationalFromEer } from '../relational/fromEer';
 
 /**
  * Everything the shapes need that cannot be read off a single element: which
@@ -101,6 +102,14 @@ export const eerModel: ModelTool<DiagramNode, Edge> = {
     node.kind === 'isa' || node.kind === 'union' ? null : fitSize(node.kind, name),
 
   validate: (diagram) => validate(diagram),
+
+  // The mapping is shared with the SQL generator, so the diagram you get is
+  // the same schema the SQL describes.
+  derive: {
+    to: 'relational',
+    label: 'Generate relational model',
+    build: (diagram) => relationalFromEer(diagram),
+  },
 
   exports: {
     sql: (diagram, title) => {

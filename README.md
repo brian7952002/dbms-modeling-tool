@@ -44,6 +44,12 @@ disjoint specialisation — are called out as warnings rather than silently drop
 **Sharing and storage.** Autosave to the browser, `.eer.json` files, SVG and PNG export, a shareable
 link that carries the entire diagram in the URL, and optional accounts with a private cloud library.
 
+**Three models, one project.** The design process has three stages and this has a tool for each:
+the **conceptual** EER diagram, the **logical** relational schema, and instance diagrams that test
+either. Pick one from the model switcher; they live together in a project. **File ▸ Generate
+relational model** maps an EER diagram to tables using the same code that produces the SQL, so the
+diagram and the script cannot disagree.
+
 **Instance diagrams, checked against the schema.** Draw a handful of sample rows for an EER model
 and the checker holds them against its constraints: an instance joined to two owners where the
 schema says one, an instance in no relationship where participation is total, a count outside a

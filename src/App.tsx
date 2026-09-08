@@ -709,6 +709,30 @@ export default function App() {
         case 'models':
           setModal('models');
           break;
+        case 'derive': {
+          // Producing the next model in the process: the result opens as a new
+          // diagram of that kind, leaving the source untouched.
+          const recipe = model.derive;
+          if (!recipe) break;
+          const produced = recipe.build(diagram);
+          const tool = getModel(recipe.to);
+          setModelId(recipe.to);
+          dispatch({
+            type: 'load',
+            diagram: produced.diagram,
+            title: `${title} — ${tool.label.split('—').pop()?.trim() ?? 'derived'}`,
+            resetHistory: true,
+          });
+          bindCloudDoc(null);
+          window.requestAnimationFrame(() => fitToView(produced.diagram));
+          const warned = produced.warnings?.length ?? 0;
+          notify(
+            warned > 0
+              ? `Generated ${produced.diagram.nodes.length} tables · ${warned} mapping warning${warned === 1 ? '' : 's'} in the SQL view.`
+              : `Generated ${produced.diagram.nodes.length} tables from “${title}”.`,
+          );
+          break;
+        }
         case 'export-svg':
           exportSvg();
           break;
@@ -911,6 +935,7 @@ export default function App() {
         title={title}
         modelLabel={model.label}
         samples={model.samples.map((s) => ({ id: s.id, title: s.title }))}
+        deriveLabel={model.derive?.label ?? null}
         tool={tool}
         setTool={setTool}
         canUndo={canUndo}

@@ -12,16 +12,18 @@ export function measureText(text: string, font = LABEL_FONT): number {
   const key = `${font}|${text}`;
   const hit = cache.get(key);
   if (hit !== undefined) return hit;
-  if (!ctx) {
-    const canvas = document.createElement('canvas');
-    ctx = canvas.getContext('2d');
+  // Guard the DOM access itself: this runs under Node in tests, where the
+  // fallback below is the whole point.
+  if (!ctx && typeof document !== 'undefined') {
+    ctx = document.createElement('canvas').getContext('2d');
   }
   let width: number;
   if (ctx) {
     ctx.font = font;
     width = ctx.measureText(text).width;
   } else {
-    width = text.length * 7.2; // headless fallback
+    // Rough but stable, so headless layout stays deterministic.
+    width = text.length * 7.2;
   }
   cache.set(key, width);
   return width;

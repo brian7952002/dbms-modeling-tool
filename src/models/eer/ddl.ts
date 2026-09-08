@@ -21,25 +21,25 @@ import {
 /* Relational schema representation                                           */
 /* -------------------------------------------------------------------------- */
 
-interface Column {
+export interface RelColumn {
   name: string;
   type: string;
   notNull: boolean;
   comment?: string;
 }
 
-interface ForeignKey {
+export interface RelForeignKey {
   columns: string[];
   refTable: string;
   refColumns: string[];
   onDelete?: string;
 }
 
-interface Table {
+export interface RelTable {
   name: string;
-  columns: Column[];
+  columns: RelColumn[];
   pk: string[];
-  fks: ForeignKey[];
+  fks: RelForeignKey[];
   uniques: string[][];
   checks: string[];
   comment?: string;
@@ -47,6 +47,20 @@ interface Table {
 
 export interface DdlResult {
   sql: string;
+  notes: string[];
+  warnings: string[];
+}
+
+/**
+ * The relational schema an EER diagram maps to, before it becomes text.
+ *
+ * The mapping is the hard part and it is the same whether the destination is
+ * SQL or a relational diagram, so it is computed once and shared. Keeping this
+ * structure exported is what lets the logical model be generated from the
+ * conceptual one rather than reimplementing seven steps of Elmasri.
+ */
+export interface RelationalSchema {
+  tables: RelTable[];
   notes: string[];
   warnings: string[];
 }
@@ -132,20 +146,20 @@ export const isTotal = (e: Edge) =>
 /* Generator                                                                  */
 /* -------------------------------------------------------------------------- */
 
-export function generateDdl(d: Diagram, title = 'EER Model'): DdlResult {
+export function mapToRelational(d: Diagram): RelationalSchema {
   const notes: string[] = [];
   const warnings: string[] = [];
-  const tables: Table[] = [];
+  const tables: RelTable[] = [];
   const tableNames = new Set<string>();
   /** entity id -> its table */
-  const entityTable = new Map<Id, Table>();
+  const entityTable = new Map<Id, RelTable>();
   /** Extra superclass links, added once every primary key is resolved. */
   const sharedSubclasses: { entity: EntityNode; extraParents: { id: Id }[] }[] = [];
 
   const tableNameFor = (raw: string) => uniqueName(tableNames, safeIdent(raw));
 
-  const newTable = (raw: string, comment?: string): Table => {
-    const t: Table = {
+  const newTable = (raw: string, comment?: string): RelTable => {
+    const t: RelTable = {
       name: tableNameFor(raw),
       columns: [],
       pk: [],
@@ -158,7 +172,7 @@ export function generateDdl(d: Diagram, title = 'EER Model'): DdlResult {
     return t;
   };
 
-  const addColumn = (t: Table, col: Column): string => {
+  const addColumn = (t: RelTable, col: RelColumn): string => {
     const taken = new Set(t.columns.map((c) => c.name));
     const name = uniqueName(taken, safeIdent(col.name));
     t.columns.push({ ...col, name });
@@ -361,12 +375,12 @@ export function generateDdl(d: Diagram, title = 'EER Model'): DdlResult {
 
   /* ---- Pass 2: non-key attributes and multivalued attribute tables ------ */
 
-  const multivaluedTables: Table[] = [];
+  const multivaluedTables: RelTable[] = [];
 
   const emitOwnedAttributes = (
     ownerName: string,
     ownerId: Id,
-    t: Table,
+    t: RelTable,
     ownerPk: { name: string; type: string }[],
   ) => {
     for (const a of attributesOf(d, ownerId)) {
@@ -424,7 +438,7 @@ export function generateDdl(d: Diagram, title = 'EER Model'): DdlResult {
 
   /** Adds one participant's key to a table as a foreign key column group. */
   const addParticipantFk = (
-    t: Table,
+    t: RelTable,
     entity: EntityNode,
     prefix: string,
     notNull: boolean,
@@ -654,7 +668,12 @@ export function generateDdl(d: Diagram, title = 'EER Model'): DdlResult {
     }
   }
 
-  /* ---- Emit ------------------------------------------------------------- */
+  return { tables, notes, warnings };
+}
+
+/** Renders a mapped schema as SQL. */
+export function generateDdl(d: Diagram, title = 'EER Model'): DdlResult {
+  const { tables, notes, warnings } = mapToRelational(d);
 
   const lines: string[] = [];
   lines.push(`-- ${title}`);
