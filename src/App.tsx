@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas, type Tool, type Viewport } from './components/Canvas';
 import { Toolbar, type ToolbarAction } from './components/Toolbar';
 import { Palette } from './components/Palette';
@@ -6,7 +6,10 @@ import { Inspector } from './components/Inspector';
 import { IssuesPanel } from './components/IssuesPanel';
 import { Modal } from './components/Modal';
 import { HelpContent } from './components/HelpContent';
-import { cloneSelection, initialState, reducer } from './state/store';
+import { cloneSelection } from './state/store';
+import { useDiagramDoc } from './collab/useDiagramDoc';
+import { applyEncodedState, encodeState } from './collab/doc';
+import { RealtimeProvider, type PeerState } from './collab/provider';
 import type { Diagram, Id, NodeKind, Point } from './model/types';
 import { emptyDiagram } from './model/types';
 import { createNode, newId } from './model/factory';
@@ -27,10 +30,9 @@ import { useAuth } from './cloud/auth';
 import { AccountModal } from './components/AccountModal';
 import { LibraryModal } from './components/LibraryModal';
 import {
-  ConflictError,
   createDiagram,
   openDiagram,
-  saveDiagram,
+  persistRealtime,
   type CloudDiagram,
 } from './cloud/diagrams';
 import { ProjectsModal } from './components/ProjectsModal';
@@ -41,7 +43,7 @@ import {
   redeemInvite,
   type Project,
 } from './cloud/projects';
-import { usePresence } from './cloud/presence';
+import { colorFor } from './cloud/presence';
 
 const STORAGE_KEY = 'eer-designer:autosave:v1';
 const PREFS_KEY = 'eer-designer:prefs:v1';
@@ -81,11 +83,16 @@ function loadAutosave(): { diagram: Diagram; title: string } | null {
 
 export default function App() {
   const restored = useRef(loadAutosave());
-  const [state, dispatch] = useReducer(
-    reducer,
-    restored.current ?? { diagram: companySample(), title: 'Company schema' },
-    initialState,
-  );
+  const {
+    doc,
+    diagram,
+    title,
+    selection,
+    dispatch,
+    canUndo,
+    canRedo,
+    revision,
+  } = useDiagramDoc(restored.current ?? { diagram: companySample(), title: 'Company schema' });
 
   const auth = useAuth();
   const [prefs, setPrefs] = useState<Prefs>(loadPrefs);
@@ -96,8 +103,9 @@ export default function App() {
   >(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [activeProject, setActiveProject] = useState<Project | null>(null);
-  /** Set when a save was refused because someone else got there first. */
-  const [conflict, setConflict] = useState<string | null>(null);
+  const [peers, setPeers] = useState<PeerState[]>([]);
+  const [liveConnected, setLiveConnected] = useState(false);
+  const providerRef = useRef<RealtimeProvider | null>(null);
   /** The cloud row this canvas is currently bound to, if any. */
   const [cloudDoc, setCloudDoc] = useState<CloudDiagram | null>(null);
   const [cloudState, setCloudState] = useState<
@@ -118,7 +126,7 @@ export default function App() {
 
   /* ---- validation ------------------------------------------------------ */
 
-  const issues = useMemo(() => validate(state.diagram), [state.diagram]);
+  const issues = useMemo(() => validate(diagram), [diagram]);
   const issueByNode = useMemo(() => {
     const map = new Map<Id, 'error' | 'warning'>();
     for (const i of issues) {
@@ -135,18 +143,19 @@ export default function App() {
   /* ---- persistence ----------------------------------------------------- */
 
   useEffect(() => {
+    void revision;
     const id = window.setTimeout(() => {
       try {
         localStorage.setItem(
           STORAGE_KEY,
-          JSON.stringify(toFile(state.diagram, state.title)),
+          JSON.stringify(toFile(diagram, title)),
         );
       } catch {
         /* private mode or quota — autosave is a convenience, not a guarantee */
       }
     }, 400);
     return () => window.clearTimeout(id);
-  }, [state.diagram, state.title]);
+  }, [diagram, title]);
 
   useEffect(() => {
     try {
@@ -198,49 +207,66 @@ export default function App() {
     }
     if (readOnly) return;
     setCloudState('pending');
+    // Every editor persists the merged result. Concurrent writes are no longer
+    // a hazard: the CRDT has already reconciled them, so whoever writes last
+    // writes the same thing.
     const timer = window.setTimeout(async () => {
       setCloudState('saving');
       try {
-        const saved = await saveDiagram(
+        const saved = await persistRealtime(
           cloudDoc.id,
-          state.diagram,
-          state.title,
-          cloudDoc.version,
+          diagram,
+          title,
+          encodeState(doc),
         );
-        setCloudDoc({ ...cloudDoc, ...saved, title: state.title });
+        setCloudDoc({ ...cloudDoc, ...saved, title });
         setCloudState('saved');
       } catch (err) {
         setCloudState('error');
-        if (err instanceof ConflictError) {
-          // Do not keep retrying: every attempt would overwrite the other
-          // person's work with a stale copy.
-          setConflict(err.message);
-        } else {
-          notify(err instanceof Error ? err.message : 'Could not save to your account.');
-        }
+        notify(err instanceof Error ? err.message : 'Could not save to your account.');
       }
     }, 2000);
     return () => window.clearTimeout(timer);
     // cloudDoc.id is the identity that matters; the object itself is replaced
     // on every successful save.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.diagram, state.title, auth.user, cloudDoc?.id, readOnly]);
+  }, [diagram, title, auth.user, cloudDoc?.id, readOnly, doc]);
 
   /** Binds the canvas to a cloud row without triggering an immediate re-save. */
   const bindCloudDoc = useCallback((meta: CloudDiagram | null) => {
     skipAutosave.current = true;
     setCloudDoc(meta);
     setCloudState(meta ? 'saved' : 'idle');
-    setConflict(null);
   }, []);
+
+  /**
+   * Loads a stored diagram into the live document. Where a CRDT state was
+   * saved it is applied verbatim, so edit history and concurrent sessions stay
+   * consistent; older rows fall back to their plain JSON.
+   */
+  const openIntoDoc = useCallback(
+    (meta: CloudDiagram, loaded: Diagram, loadedTitle: string) => {
+      if (meta.ydoc) {
+        doc.replace({ nodes: [], edges: [] }, loadedTitle, meta.kind);
+        try {
+          applyEncodedState(doc, meta.ydoc);
+        } catch {
+          doc.replace(loaded, loadedTitle, meta.kind);
+        }
+      } else {
+        doc.replace(loaded, loadedTitle, meta.kind);
+      }
+      bindCloudDoc(meta);
+    },
+    [bindCloudDoc, doc],
+  );
 
   /** Discards local edits in favour of what is actually stored. */
   const reloadFromCloud = useCallback(async () => {
     if (!cloudDoc) return;
     try {
       const loaded = await openDiagram(cloudDoc.id);
-      dispatch({ type: 'load', diagram: loaded.diagram, title: loaded.title, resetHistory: true });
-      bindCloudDoc(loaded.meta);
+      openIntoDoc(loaded.meta, loaded.diagram, loaded.title);
       window.requestAnimationFrame(() => fitToView(loaded.diagram));
       notify('Reloaded the latest version.');
     } catch (err) {
@@ -248,7 +274,7 @@ export default function App() {
     }
     // fitToView is declared below; it is only read when this runs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bindCloudDoc, cloudDoc, notify]);
+  }, [cloudDoc, notify, openIntoDoc]);
 
   const saveToCloud = useCallback(async () => {
     if (!auth.enabled || !auth.user) {
@@ -262,19 +288,14 @@ export default function App() {
     setCloudState('saving');
     try {
       if (cloudDoc) {
-        const saved = await saveDiagram(
-          cloudDoc.id,
-          state.diagram,
-          state.title,
-          cloudDoc.version,
-        );
-        bindCloudDoc({ ...cloudDoc, ...saved, title: state.title });
+        const saved = await persistRealtime(cloudDoc.id, diagram, title, encodeState(doc));
+        bindCloudDoc({ ...cloudDoc, ...saved, title });
         notify('Saved.');
       } else {
         const meta = await createDiagram(
           auth.user.id,
-          state.diagram,
-          state.title,
+          diagram,
+          title,
           activeProject && canEdit(activeProject.role) ? activeProject.id : null,
         );
         bindCloudDoc(meta);
@@ -282,27 +303,27 @@ export default function App() {
       }
     } catch (err) {
       setCloudState('error');
-      if (err instanceof ConflictError) setConflict(err.message);
-      else notify(err instanceof Error ? err.message : 'Could not save to your account.');
+      notify(err instanceof Error ? err.message : 'Could not save to your account.');
     }
   }, [
     activeProject,
+    doc,
     auth.enabled,
     auth.user,
     bindCloudDoc,
     cloudDoc,
     notify,
     readOnly,
-    state.diagram,
-    state.title,
+    diagram,
+    title,
   ]);
 
   /* ---- viewport helpers ------------------------------------------------ */
 
   const fitToView = useCallback(
-    (diagram: Diagram = state.diagram) => {
+    (target: Diagram = diagram) => {
       const rect = wrapRef.current?.getBoundingClientRect();
-      const b = nodeBounds(diagram.nodes, 60);
+      const b = nodeBounds(target.nodes, 60);
       if (!rect || !b) {
         setViewport({ x: 40, y: 40, k: 1 });
         return;
@@ -317,7 +338,7 @@ export default function App() {
         y: rect.height / 2 - ((b.minY + b.maxY) / 2) * k,
       });
     },
-    [state.diagram],
+    [diagram],
   );
 
   // Frame whatever was restored or bundled once the layout has a size.
@@ -377,9 +398,9 @@ export default function App() {
 
     if (hash.startsWith('#c=')) {
       openDiagram(hash.slice(3))
-        .then(({ diagram, title }) => {
+        .then(({ diagram: shared, title: sharedTitle }) => {
           setCloudDoc(null);
-          show(diagram, title, `Opened a shared copy of “${title}”.`);
+          show(shared, sharedTitle, `Opened a shared copy of “${sharedTitle}”.`);
         })
         .catch(() => notify('That diagram is not published, or the link has expired.'));
     }
@@ -416,7 +437,7 @@ export default function App() {
     (kind: NodeKind, p: Point) => {
       let { x, y } = p;
       for (let i = 0; i < 40; i++) {
-        const clash = state.diagram.nodes.some(
+        const clash = diagram.nodes.some(
           (n) => Math.abs(n.x - x) < n.w / 2 + 40 && Math.abs(n.y - y) < n.h / 2 + 30,
         );
         if (!clash) break;
@@ -425,7 +446,7 @@ export default function App() {
       }
       dispatch({ type: 'addNode', kind, x, y });
     },
-    [state.diagram.nodes],
+    [diagram.nodes],
   );
 
   /**
@@ -434,11 +455,11 @@ export default function App() {
    */
   const addAttribute = useCallback(
     (ownerId: Id) => {
-      const owner = state.diagram.nodes.find((n) => n.id === ownerId);
+      const owner = diagram.nodes.find((n) => n.id === ownerId);
       if (!owner) return;
-      const siblings = state.diagram.edges
+      const siblings = diagram.edges
         .filter((e) => e.kind === 'attribute' && e.target === ownerId)
-        .map((e) => state.diagram.nodes.find((n) => n.id === e.source))
+        .map((e) => diagram.nodes.find((n) => n.id === e.source))
         .filter((n): n is NonNullable<typeof n> => !!n);
 
       const used = siblings.map((s) => Math.atan2(s.y - owner.y, s.x - owner.x));
@@ -462,12 +483,12 @@ export default function App() {
         edges: [{ id: newId('e'), kind: 'attribute', source: node.id, target: ownerId }],
       });
     },
-    [state.diagram],
+    [diagram],
   );
 
   const align = useCallback(
     (axis: 'left' | 'centerX' | 'right' | 'top' | 'centerY' | 'bottom') => {
-      const nodes = state.diagram.nodes.filter((n) => state.selection.includes(n.id));
+      const nodes = diagram.nodes.filter((n) => selection.includes(n.id));
       if (nodes.length < 2) return;
       const b = nodeBounds(nodes)!;
       dispatch({ type: 'begin' });
@@ -482,13 +503,13 @@ export default function App() {
         dispatch({ type: 'updateNode', id: n.id, patch, transient: true });
       }
     },
-    [state.diagram.nodes, state.selection],
+    [diagram.nodes, selection],
   );
 
   const distribute = useCallback(
     (axis: 'x' | 'y') => {
-      const nodes = state.diagram.nodes
-        .filter((n) => state.selection.includes(n.id))
+      const nodes = diagram.nodes
+        .filter((n) => selection.includes(n.id))
         .sort((a, b) => a[axis] - b[axis]);
       if (nodes.length < 3) return;
       const first = nodes[0][axis];
@@ -504,17 +525,17 @@ export default function App() {
         });
       });
     },
-    [state.diagram.nodes, state.selection],
+    [diagram.nodes, selection],
   );
 
   /* ---- file / export actions ------------------------------------------ */
 
   const saveJson = useCallback(() => {
-    const blob = new Blob([JSON.stringify(toFile(state.diagram, state.title), null, 2)], {
+    const blob = new Blob([JSON.stringify(toFile(diagram, title), null, 2)], {
       type: 'application/json',
     });
-    downloadBlob(blob, `${slugify(state.title)}.eer.json`);
-  }, [state.diagram, state.title]);
+    downloadBlob(blob, `${slugify(title)}.eer.json`);
+  }, [diagram, title]);
 
   const openJson = useCallback(
     async (file: File) => {
@@ -533,26 +554,26 @@ export default function App() {
 
   const exportSvg = useCallback(() => {
     if (!svgRef.current) return;
-    const source = toSvgString(svgRef.current, state.diagram);
-    downloadBlob(new Blob([source], { type: 'image/svg+xml' }), `${slugify(state.title)}.svg`);
-  }, [state.diagram, state.title]);
+    const source = toSvgString(svgRef.current, diagram);
+    downloadBlob(new Blob([source], { type: 'image/svg+xml' }), `${slugify(title)}.svg`);
+  }, [diagram, title]);
 
   const exportPng = useCallback(async () => {
     if (!svgRef.current) return;
     try {
-      const blob = await toPngBlob(svgRef.current, state.diagram, 2);
-      downloadBlob(blob, `${slugify(state.title)}.png`);
+      const blob = await toPngBlob(svgRef.current, diagram, 2);
+      downloadBlob(blob, `${slugify(title)}.png`);
     } catch (err) {
       notify(err instanceof Error ? err.message : 'PNG export failed.');
     }
-  }, [state.diagram, state.title, notify]);
+  }, [diagram, title, notify]);
 
   const makeShareLink = useCallback(async () => {
-    const payload = await encodeShare(toFile(state.diagram, state.title));
+    const payload = await encodeShare(toFile(diagram, title));
     const url = `${window.location.origin}${window.location.pathname}#d=${payload}`;
     setShareUrl(url);
     setModal('share');
-  }, [state.diagram, state.title]);
+  }, [diagram, title]);
 
   const loadSample = useCallback(
     (which: 'company' | 'category') => {
@@ -691,13 +712,13 @@ export default function App() {
       }
       if (mod && e.key.toLowerCase() === 'd') {
         e.preventDefault();
-        const copy = cloneSelection(state.diagram, state.selection);
+        const copy = cloneSelection(diagram, selection);
         if (copy.nodes.length > 0) dispatch({ type: 'insertNodes', ...copy });
         return;
       }
       if (mod && e.key.toLowerCase() === 'a') {
         e.preventDefault();
-        dispatch({ type: 'select', ids: state.diagram.nodes.map((n) => n.id) });
+        dispatch({ type: 'select', ids: diagram.nodes.map((n) => n.id) });
         return;
       }
       if (e.key === 'Delete' || e.key === 'Backspace') {
@@ -709,33 +730,60 @@ export default function App() {
       if (e.key === 'c' || e.key === 'C') setTool('connect');
       if (e.key === 'f' || e.key === 'F') fitToView();
 
-      if (e.key.startsWith('Arrow') && state.selection.length > 0) {
+      if (e.key.startsWith('Arrow') && selection.length > 0) {
         e.preventDefault();
         const step = e.shiftKey ? 10 : 1;
         const dx = e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0;
         const dy = e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0;
         dispatch({ type: 'begin' });
-        dispatch({ type: 'moveNodes', ids: state.selection, dx, dy });
+        dispatch({ type: 'moveNodes', ids: selection, dx, dy });
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [fitToView, saveJson, state.diagram, state.selection]);
+  }, [fitToView, saveJson, diagram, selection]);
 
   /* ---- render ---------------------------------------------------------- */
 
-  // Only meaningful for a shared diagram: a private one has no one else in it.
-  const peers = usePresence(
-    cloudDoc && cloudDoc.projectId ? cloudDoc.id : null,
-    auth.user
-      ? { id: auth.user.id, name: auth.user.email?.split('@')[0] ?? 'Someone' }
-      : null,
-  );
+  // A live session exists for any diagram stored in the cloud. Alone in the
+  // room it costs one idle subscription; shared, it is the whole feature.
+  useEffect(() => {
+    providerRef.current?.destroy();
+    providerRef.current = null;
+    setPeers([]);
+    setLiveConnected(false);
+
+    if (!auth.user || !cloudDoc) return;
+
+    const me = {
+      clientId: `${auth.user.id}:${Math.random().toString(36).slice(2, 8)}`,
+      name: auth.user.email?.split('@')[0] ?? 'Someone',
+      color: colorFor(auth.user.id),
+    };
+    const provider = new RealtimeProvider(
+      doc,
+      cloudDoc.id,
+      me,
+      setPeers,
+      setLiveConnected,
+    );
+    providerRef.current = provider;
+    return () => {
+      provider.destroy();
+      providerRef.current = null;
+    };
+  }, [auth.user, cloudDoc?.id, doc]);
+
+  // Broadcast what this person has selected, so teammates see it outlined.
+  useEffect(() => {
+    providerRef.current?.setSelection(selection);
+  }, [selection]);
 
   const cloudStatus = useMemo(() => {
     if (!auth.enabled || !auth.user) return null;
     if (!cloudDoc) return 'Not in your account';
     if (readOnly) return `View only · ${currentProject?.name ?? 'project'}`;
+    if (peers.length > 0) return liveConnected ? 'Live · all changes shared' : 'Reconnecting…';
     switch (cloudState) {
       case 'saving':
         return 'Saving…';
@@ -746,21 +794,21 @@ export default function App() {
       default:
         return `Saved · ${cloudDoc.title}`;
     }
-  }, [auth.enabled, auth.user, cloudDoc, cloudState, currentProject, readOnly]);
+  }, [auth.enabled, auth.user, cloudDoc, cloudState, currentProject, readOnly, peers.length, liveConnected]);
 
   const ddl = useMemo(
-    () => (modal === 'sql' ? generateDdl(state.diagram, state.title) : null),
-    [modal, state.diagram, state.title],
+    () => (modal === 'sql' ? generateDdl(diagram, title) : null),
+    [modal, diagram, title],
   );
 
   return (
     <div className="app" data-theme={prefs.theme}>
       <Toolbar
-        title={state.title}
+        title={title}
         tool={tool}
         setTool={setTool}
-        canUndo={state.past.length > 0}
-        canRedo={state.future.length > 0}
+        canUndo={canUndo}
+        canRedo={canRedo}
         errorCount={errorCount}
         warningCount={warningCount}
         showGrid={prefs.showGrid}
@@ -769,7 +817,7 @@ export default function App() {
         cloudEnabled={auth.enabled}
         userEmail={auth.user?.email ?? null}
         cloudStatus={cloudStatus}
-        peers={peers}
+        peers={peers.map((p) => ({ userId: p.clientId, name: p.name, color: p.color }))}
         projectName={currentProject?.name ?? null}
         onAction={onToolbarAction}
       />
@@ -781,8 +829,8 @@ export default function App() {
 
         <div className="canvas-wrap" ref={wrapRef}>
           <Canvas
-            diagram={state.diagram}
-            selection={state.selection}
+            diagram={diagram}
+            selection={selection}
             dispatch={dispatch}
             tool={tool}
             viewport={viewport}
@@ -793,6 +841,8 @@ export default function App() {
             issues={issueByNode}
             onAddNodeAt={addNodeAt}
             svgRef={svgRef}
+            peers={peers}
+            onCursorMove={(p) => providerRef.current?.setCursor(p)}
           />
           {prefs.showIssues && (
             <IssuesPanel
@@ -805,9 +855,9 @@ export default function App() {
 
         <div className="right-rail">
           <Inspector
-            diagram={state.diagram}
-            selection={state.selection}
-            title={state.title}
+            diagram={diagram}
+            selection={selection}
+            title={title}
             dispatch={dispatch}
             onAddAttribute={addAttribute}
             onAlign={align}
@@ -861,7 +911,7 @@ export default function App() {
                 onClick={() =>
                   downloadBlob(
                     new Blob([ddl.sql], { type: 'application/sql' }),
-                    `${slugify(state.title)}.sql`,
+                    `${slugify(title)}.sql`,
                   )
                 }
               >
@@ -925,7 +975,7 @@ export default function App() {
       {modal === 'history' && cloudDoc && (
         <HistoryModal
           diagramId={cloudDoc.id}
-          diagramTitle={state.title}
+          diagramTitle={title}
           canEdit={!readOnly}
           onClose={() => setModal(null)}
           onRestored={reloadFromCloud}
@@ -936,45 +986,19 @@ export default function App() {
       {modal === 'library' && (
         <LibraryModal
           onClose={() => setModal(null)}
-          diagram={state.diagram}
-          title={state.title}
+          diagram={diagram}
+          title={title}
           currentId={cloudDoc?.id ?? null}
           projects={projects}
           activeProject={activeProject}
           onChangeProject={setActiveProject}
-          onOpened={(meta, diagram, title) => {
-            dispatch({ type: 'load', diagram, title, resetHistory: true });
-            bindCloudDoc(meta);
-            window.requestAnimationFrame(() => fitToView(diagram));
+          onOpened={(meta, loadedDiagram, loadedTitle) => {
+            openIntoDoc(meta, loadedDiagram, loadedTitle);
+            window.requestAnimationFrame(() => fitToView(loadedDiagram));
           }}
           onSaved={bindCloudDoc}
           notify={notify}
         />
-      )}
-
-      {conflict && (
-        <div className="conflict-bar" role="alert">
-          <span>
-            <strong>{conflict}</strong> Your changes are still on this canvas — reload to take
-            theirs, or save a copy to keep yours.
-          </span>
-          <button type="button" onClick={() => void reloadFromCloud()}>
-            Reload theirs
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              bindCloudDoc(null);
-              setConflict(null);
-              notify('Unlinked. Use Cloud ▸ My diagrams to save this as a new diagram.');
-            }}
-          >
-            Keep mine as a copy
-          </button>
-          <button type="button" className="icon" onClick={() => setConflict(null)} aria-label="Dismiss">
-            ✕
-          </button>
-        </div>
       )}
 
       {toast && <div className="toast">{toast}</div>}
