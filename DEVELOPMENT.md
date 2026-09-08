@@ -15,16 +15,13 @@ cleared: it records what exists, what is decided and why, what is broken, and wh
 | Repo | https://github.com/brian7952002/eer-diagram-designer (public) |
 | Supabase project ref | `mftxzxdnkozkfpzwryfe` |
 | Deploy | GitHub Actions → Pages, on push to `main` |
-| Branch `main` | Working. Single-writer collaboration. |
-| Branch `realtime-crdt-wip` | **Broken — do not merge.** See §7. |
+| Branch `main` | Working. Real-time CRDT collaboration. |
 
 **Shipped and verified:** full Chen/Elmasri EER notation, live model checker, SQL generation,
 JSON/SVG/PNG export, share links, accounts, team projects with roles, invite links, version history
-with attribution, activity feed.
+with attribution, activity feed, real-time collaborative editing with cursors and per-user undo.
 
 **Decided but not built:** instance diagrams (§6), the three-model ecosystem (§5).
-
-**In flight and failing:** real-time CRDT editing (§7).
 
 ---
 
@@ -33,8 +30,8 @@ with attribution, activity feed.
 ```bash
 npm install
 npm run dev        # http://localhost:5183 (see .claude/launch.json)
-npm run build
-npx tsc -b         # typecheck; there is no test runner yet
+npm test           # vitest — convergence and undo tests for the CRDT
+npm run build      # typechecks, then builds
 ```
 
 `.env.local` holds `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` (gitignored). The same two
@@ -198,85 +195,53 @@ Decided in conversation, not yet built.
 
 ---
 
-## 7. In flight and broken: real-time CRDT
+## 7. Real-time collaboration
 
-On branch `realtime-crdt-wip`. Typechecks, does not converge. **Do not merge.**
+Shipped. Yjs CRDT over Supabase Realtime, with no server component.
 
-### What is there
+- `src/collab/doc.ts` — `DiagramDoc`. Nodes and edges are `Y.Map`s keyed by id, and **each node is
+  itself a `Y.Map` of its fields**. That is the whole point: two people editing different fields of
+  one shape both keep their change, where a single blob per node would let the last writer silently
+  discard the other. Per-user undo via `Y.UndoManager` scoped to a local origin.
+- `src/collab/provider.ts` — peers broadcast their own updates and answer each other's
+  `sync-request` with a state-vector diff. Awareness (cursor, selection, name, colour) rides the
+  same channel but never enters the document, so a moving cursor is not an undoable edit.
+- `src/collab/useDiagramDoc.ts` — binds the document to React while **keeping the existing `Action`
+  union**, so `Canvas` and `Inspector` still `dispatch` exactly as before. Preserve this seam: it is
+  what made this migration tractable and what will make the ecosystem refactor tractable.
+- `persist_realtime_diagram()` saves the merged state plus the plain JSON, with no stale-version
+  check — under a CRDT concurrent writes are normal, and the document is already reconciled before
+  it arrives.
 
-- `src/collab/doc.ts` — `DiagramDoc`, a Yjs-backed document. Nodes and edges are `Y.Map`s keyed by
-  id; each node is itself a `Y.Map` of its fields, so two people editing different fields of one
-  shape both survive. Per-user undo via `Y.UndoManager` scoped to a local origin.
-- `src/collab/provider.ts` — serverless provider over Supabase Realtime broadcast. Peers exchange
-  their own updates and answer each other's `sync-request` with a state-vector diff. Awareness
-  (cursor, selection, name, colour) rides the same channel and is deliberately kept out of the CRDT
-  so a moving cursor is not an undoable edit.
-- `src/collab/useDiagramDoc.ts` — binds the doc to React while **keeping the existing `Action`
-  union**, so `Canvas` and `Inspector` still `dispatch` exactly as before. This is what made the
-  migration tractable; preserve it.
-- `persist_realtime_diagram()` in Postgres (already deployed on `main`'s database, harmless there):
-  saves merged state plus the plain JSON, without the stale-version check a CRDT makes wrong.
+### A trap worth remembering
 
-### The bug
+This was believed broken for some time. It was not. The **browser test harness** imported `yjs`
+through a hand-written `/node_modules/.vite/deps/yjs.js?v=1` URL, which is a *different module
+instance* from the one Vite gives `doc.ts`. Structs created by one Yjs cannot integrate into a
+document owned by another, and the symptom mimics a CRDT bug closely: the delete set applies, the
+replacement structs do not, so an edited field vanishes on one side only.
 
-Two documents sync, then concurrently edit the same node on different fields — A renames, B moves.
-After merging, **A is missing exactly the keys B wrote.** A receives B's *delete* of the old value
-but not B's replacement item, so the key vanishes entirely. B is correct.
+**Never import a dependency by a guessed bundler path.** In the browser console, import only your
+own modules and use what they re-export — `encodeState`/`applyEncodedState` are enough to drive a
+convergence check without touching Yjs directly. Better still, write it as a test.
 
-```
-before merge   x item = A:4        (both sides agree)
-after merge    A: x item = A:4 (deleted)   ← replacement never integrated
-               B: x item = B:0             ← correct
-```
+### Tests
 
-### Ruled out
+`src/collab/doc.test.ts` covers concurrent rename-plus-move on one shape, conflicting writes to one
+field, a delete racing an edit, dangling-edge cleanup, three-way convergence, and undo reverting
+only its own author's work. Run `npm test` after touching anything in `src/collab/`.
 
-- **Not the transport.** Fails identically when reconciled by replaying each update, by
-  state-vector diff, and by full state exchange.
-- **Not Yjs.** Plain `Y.Doc`/`Y.Map` performing the same operation sequence converges correctly,
-  with an UndoManager on neither side, either side, or both.
-- **Not the helper methods.** Raw `Y.Map.set` through `DiagramDoc`'s own maps diverges the same way.
-- **Not a client-id collision.** The ids differ.
+### Not yet verified
 
-So it is something `DiagramDoc` does that the plain-Yjs equivalent does not. The untested
-differences are: three root maps rather than one, an `UndoManager` scoped across all three with a
-shared module-level `Symbol` origin, and `replace()` — which calls `nodes.clear()` and
-`edges.clear()` inside the same transaction as the inserts and then calls `undoManager.clear()`.
-
-### Next step
-
-The signature — delete set applied, structs not — is what you would see if the incoming structs were
-parked as *pending* on a missing dependency. Inspect `A.ydoc.store.pendingStructs` immediately after
-the merge. If they are pending, the dependency they are waiting on will point at how `replace()`
-builds the nested maps; suspect `toYMap()` populating a detached `Y.Map` before insertion in
-combination with `clear()` in the same transaction.
-
-A useful bisect: build up from the passing plain-Yjs case toward `DiagramDoc` one difference at a
-time (add the second and third root maps, then the shared-symbol UndoManager, then `replace()`'s
-clear-then-set).
-
-### Verifying a fix
-
-Convergence must be asserted, not eyeballed. The check that found this, in the browser console
-against the dev server:
-
-```js
-const Y = await import('/node_modules/.vite/deps/yjs.js?v=1');
-const { DiagramDoc } = await import('/src/collab/doc.ts');
-// sync A→B, disconnect, A.updateNode(name) + B.moveNodes, reconcile, then assert
-// JSON.stringify(A.snapshot()) === JSON.stringify(B.snapshot())
-```
-
-This belongs in a real test file rather than the console — see §8.
-
----
+The multi-browser path — two real accounts editing the same diagram at once, seeing each other's
+cursors. Convergence is proven; the Supabase Realtime wiring under genuine network conditions is
+not. Check that Realtime is enabled for the project if peers never appear.
 
 ## 8. Backlog, in the order I would do it
 
-1. **Fix the CRDT convergence bug** (§7). Nothing else in the real-time plan matters until it holds.
-2. **Add a test runner** (Vitest). There are none, and a CRDT without convergence tests is a
-   liability. First tests: convergence under concurrent edits, `ddl.ts` mapping for each
-   relationship shape, `validate.ts` rules.
+1. **Two-browser check of real-time** (§7) — the one thing convergence tests cannot prove.
+2. **Extend test coverage** to `ddl.ts` mapping for each relationship shape, and the `validate.ts`
+   rules.
 3. **Extract the platform/model seam** (§5) while there are only two model types to move — it gets
    harder with every feature added to `Canvas.tsx`.
 4. **Instance diagrams** (§6), as the first tool built on the new seam. It proves the seam is real.
@@ -301,5 +266,6 @@ Recorded so they are not re-argued.
 | Invite links rather than email invites | Chosen over email lookup; no directory, nothing to enumerate |
 | Roles enforced in RLS | The interface hides what you cannot do; the database is what stops you |
 | Yjs CRDT over a lighter broadcast scheme | Only option with a merge guarantee; half-built real-time loses work |
+| Node fields stored individually, not as a blob | A blob makes concurrent edits to one shape last-write-wins |
 | Cursors + selection highlights | Chosen as part of the real-time work |
 | Instance diagrams linked with constraint checking | Turns them into a way to test the model, not just draw it |
