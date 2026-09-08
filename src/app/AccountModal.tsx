@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Modal } from '../platform/Modal';
 import { useAuth } from '../cloud/auth';
 import { getProfile, updateDisplayName } from '../cloud/profile';
+import { checkPwned, describePwned } from '../cloud/pwned';
 
 type Mode = 'signin' | 'signup' | 'reset';
 
@@ -108,6 +109,13 @@ function ManageAccount({ onClose }: { onClose: () => void }) {
     }
     setBusy('password');
     try {
+      // Supabase only rejects breached passwords on the Pro plan, so the check
+      // is done here too. It is advisory — see cloud/pwned.ts.
+      const breach = describePwned(await checkPwned(next));
+      if (breach) {
+        setError(breach);
+        return;
+      }
       await auth.changePassword(current, next);
       setCurrent('');
       setNext('');
@@ -166,7 +174,10 @@ function ManageAccount({ onClose }: { onClose: () => void }) {
               required
             />
           </Field>
-          <Field label="New password" hint="At least 8 characters.">
+          <Field
+            label="New password"
+            hint="At least 8 characters, and checked against known breaches."
+          >
             <input
               type="password"
               autoComplete="new-password"
@@ -237,6 +248,11 @@ function SignIn({ onClose }: { onClose: () => void }) {
         await auth.signIn(email.trim(), password);
         onClose();
       } else if (mode === 'signup') {
+        const breach = describePwned(await checkPwned(password));
+        if (breach) {
+          setError(breach);
+          return;
+        }
         const { needsConfirmation } = await auth.signUp(email.trim(), password);
         if (needsConfirmation) {
           setDone(`Almost there — confirm the link we sent to ${email.trim()}, then sign in.`);

@@ -3,7 +3,7 @@
 Working context for this project. Written so that work can resume after the chat history is
 cleared: it records what exists, what is decided and why, what is broken, and what is next.
 
-**Last updated:** 2026-09-07
+**Last updated:** 2026-09-08
 
 ---
 
@@ -24,6 +24,11 @@ with attribution, activity feed, real-time collaborative editing with cursors an
 **Ecosystem:** complete. The platform/model seam carries all four tools — EER, instance diagrams,
 the relational schema, and the physical design — and the three stages of the design process chain
 into each other: conceptual → logical → physical.
+
+**The one thing never verified:** two real browsers editing the same diagram at once. Convergence is
+proven by tests and in the runtime; the Supabase Realtime *transport* under real network conditions
+is not. If peers never appear, check Realtime is enabled for the project. This needs two accounts,
+and it is the top item in §8.
 
 ---
 
@@ -134,8 +139,24 @@ Changing a password **re-authenticates first**: the current password is verified
 `signInWithPassword` before `updateUser` is called. A session alone should not be enough to change
 the password on a machine somebody walked away from.
 
-This is also the only place leaked-password protection is observable from the app — if it is on,
-Supabase rejects a breached password and the panel says so.
+### Breached-password checking, and why it is client-side
+
+**Supabase only rejects leaked passwords on the Pro plan.** This org is on free, so the dashboard
+toggle renders but does nothing — confirmed the hard way: it was switched on, a known-bad password
+was still accepted, and the advisor kept reporting it disabled because it was right.
+
+`src/cloud/pwned.ts` therefore does the check from the browser against the Have I Been Pwned range
+API, used by both sign-up and password change. It is k-anonymous: only the first five hex characters
+of the password's SHA-1 are sent, and the response covers every hash sharing that prefix, so the
+service cannot tell which was asked about. Verified working — `password123` reports 2.2 million
+breaches, `Password1` 3.4 million, a random passphrase passes.
+
+**It is advisory, not enforcement.** Someone determined could call the auth API directly with the
+publishable key and bypass it. Real enforcement needs the server, which needs Pro. That is an honest
+trade for catching accidental reuse at no cost, and the code says so where someone will read it.
+
+Free-plan password settings that *do* work and are worth turning on, under
+Authentication ▸ Providers ▸ Email: minimum length, and required character classes.
 
 ### Outstanding dashboard items (not reachable via the connector)
 
@@ -146,10 +167,11 @@ Supabase rejects a breached password and the panel says so.
 
 ---
 
-## 5. Planned: the modelling ecosystem
+## 5. The modelling ecosystem
 
-The direction: this stops being one EER editor and becomes a shell hosting **three independent
-modelling tools**, matching the design process in Elmasri & Navathe.
+Built. This is no longer one EER editor but a shell hosting **independent modelling tools**,
+matching the design process in Elmasri & Navathe. Adding another means writing a `ModelTool` and
+registering it in `ecosystem/models.ts`; nothing in `platform/` should need to change.
 
 | Model | Purpose | Status |
 | --- | --- | --- |
@@ -302,14 +324,14 @@ does not have, and a primary key with no fast access path.
 
 Shipped. Yjs CRDT over Supabase Realtime, with no server component.
 
-- `src/collab/doc.ts` — `DiagramDoc`. Nodes and edges are `Y.Map`s keyed by id, and **each node is
+- `src/platform/collab/doc.ts` — `DiagramDoc`. Nodes and edges are `Y.Map`s keyed by id, and **each node is
   itself a `Y.Map` of its fields**. That is the whole point: two people editing different fields of
   one shape both keep their change, where a single blob per node would let the last writer silently
   discard the other. Per-user undo via `Y.UndoManager` scoped to a local origin.
-- `src/collab/provider.ts` — peers broadcast their own updates and answer each other's
+- `src/platform/collab/provider.ts` — peers broadcast their own updates and answer each other's
   `sync-request` with a state-vector diff. Awareness (cursor, selection, name, colour) rides the
   same channel but never enters the document, so a moving cursor is not an undoable edit.
-- `src/collab/useDiagramDoc.ts` — binds the document to React while **keeping the existing `Action`
+- `src/platform/collab/useDiagramDoc.ts` — binds the document to React while **keeping the existing `Action`
   union**, so `Canvas` and `Inspector` still `dispatch` exactly as before. Preserve this seam: it is
   what made this migration tractable and what will make the ecosystem refactor tractable.
 - `persist_realtime_diagram()` saves the merged state plus the plain JSON, with no stale-version
@@ -330,9 +352,9 @@ convergence check without touching Yjs directly. Better still, write it as a tes
 
 ### Tests
 
-`src/collab/doc.test.ts` covers concurrent rename-plus-move on one shape, conflicting writes to one
+`src/platform/collab/doc.test.ts` covers concurrent rename-plus-move on one shape, conflicting writes to one
 field, a delete racing an edit, dangling-edge cleanup, three-way convergence, and undo reverting
-only its own author's work. Run `npm test` after touching anything in `src/collab/`.
+only its own author's work. Run `npm test` after touching anything in `src/platform/collab/`.
 
 ### Not yet verified
 
@@ -342,13 +364,12 @@ not. Check that Realtime is enabled for the project if peers never appear.
 
 ## 8. Backlog, in the order I would do it
 
-1. **Two-browser check of real-time** (§7) — the one thing convergence tests cannot prove.
+1. **Two-browser check of real-time** (§7) — the one thing convergence tests cannot prove, and the
+   only substantial unknown left in the project.
 2. **Extend test coverage** to the remaining `validate.ts` rules, and to `platform/Canvas.tsx`
    interaction, which has none.
-3. Rename the Supabase project (cosmetic; the database and keys are unaffected)
-4. Confirm leaked-password protection actually saved — the advisor is cached, and the only
-   definitive test is trying to set a breached password from the account panel (§5): the interface says DBMS Modeling, the repo and file format still say
-   eer-diagram-designer.
+3. Turn on the free-plan password settings (§4): minimum length and required character classes.
+4. Rename the Supabase project to match (cosmetic; the database, keys and URL are unaffected).
 
 ---
 
@@ -372,5 +393,7 @@ Recorded so they are not re-argued.
 | The relational model generated from the shared mapping | The diagram and the SQL cannot disagree if neither owns the algorithm |
 | Relational columns stored one per CRDT key | Same reason node fields are: an array makes concurrent column edits last-write-wins |
 | Physical estimates kept textbook-simple | Idealised absolutes, correct ratios; a fake query planner would mislead more than it helps |
+| Breach checking done client-side | Supabase gates it behind Pro; advisory checking beats none, and the limitation is stated rather than hidden |
+| Old repo kept as a redirect | GitHub does not forward renamed Pages URLs, and the diagram lives in the fragment |
 | Cursors + selection highlights | Chosen as part of the real-time work |
 | Instance diagrams linked with constraint checking | Turns them into a way to test the model, not just draw it |
