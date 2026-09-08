@@ -192,6 +192,14 @@ Two decisions are worth knowing about if you read the code:
 
 ---
 
+## Contributing / picking this up again
+
+[`DEVELOPMENT.md`](DEVELOPMENT.md) is the working context: current status, the decisions already
+taken and why, the planned three-model ecosystem, and what is in flight or broken. Read it before
+resuming work.
+
+---
+
 ## Licence
 
 MIT — see [LICENSE](LICENSE).
