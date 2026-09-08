@@ -22,6 +22,30 @@ export function Help() {
       </section>
 
       <section>
+        <h3>Checking against the schema</h3>
+        <p>
+          Link an EER diagram under <strong>Schema</strong> in the inspector and the checker stops
+          looking only at the drawing and starts asking whether the rows are actually permitted:
+        </p>
+        <ul>
+          <li>an instance joined to two owners where the schema says one</li>
+          <li>an instance in no relationship where participation is total</li>
+          <li>a count outside a <code>(min,max)</code> constraint</li>
+          <li>a weak-entity instance with no identifying owner</li>
+          <li>a subclass member missing from its superclass, or in two disjoint subclasses</li>
+          <li>a superclass member in no subclass where the specialisation is total</li>
+        </ul>
+        <p>
+          Read the other way, this is how you test a constraint. If you can draw legal-looking data
+          that violates what you meant, the schema is what needs fixing.
+        </p>
+        <p className="panel-hint">
+          Recursive and n-ary relationships are reported as unchecked rather than guessed at: a link
+          joins two dots, and which end plays which role cannot be read off it.
+        </p>
+      </section>
+
+      <section>
         <h3>Notation</h3>
         <table>
           <tbody>

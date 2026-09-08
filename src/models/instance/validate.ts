@@ -1,5 +1,7 @@
 import type { Issue, Severity, ValidationContext } from '../../ecosystem/registry';
 import type { Diagram, DiagramNode, Id } from './types';
+import type { Diagram as EerDiagram } from '../eer/types';
+import { checkAgainstSchema } from './check';
 
 const setOf = (d: Diagram, instanceId: Id): DiagramNode | undefined => {
   const edge = d.edges.find((e) => e.kind === 'member-of' && e.source === instanceId);
@@ -95,9 +97,15 @@ export function validate(d: Diagram, context: ValidationContext): Issue[] {
   if (!context.source && d.nodes.length > 0) {
     add(
       'info',
-      'No source EER diagram is linked, so this data is not being checked against a schema.',
+      'No schema is linked, so this data is only checked for internal consistency. Link an EER diagram to check it against the constraints it is meant to illustrate.',
       [],
     );
+  }
+
+  // The structural checks above are about the drawing; these are about whether
+  // the data it shows is actually permitted by the schema.
+  if (context.source) {
+    issues.push(...checkAgainstSchema(d, context.source as EerDiagram));
   }
 
   const order: Record<Severity, number> = { error: 0, warning: 1, info: 2 };

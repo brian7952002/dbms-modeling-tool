@@ -21,7 +21,7 @@ function Field({
   );
 }
 
-export function Inspector({ diagram, selection, title, dispatch }: Props) {
+export function Inspector({ diagram, selection, title, dispatch, sourceLink }: Props) {
   const patch = (id: Id, value: Record<string, unknown>) =>
     dispatch({ type: 'updateNode', id, patch: value });
 
@@ -35,6 +35,35 @@ export function Inspector({ diagram, selection, title, dispatch }: Props) {
             onChange={(e) => dispatch({ type: 'setTitle', title: e.target.value })}
           />
         </Field>
+        {sourceLink && (
+          <Field
+            label="Schema"
+            hint={
+              sourceLink.currentId
+                ? 'Your rows are checked against this diagram’s constraints.'
+                : 'Link an EER diagram to check this data against the constraints it illustrates.'
+            }
+          >
+            {sourceLink.unavailable ? (
+              <p className="panel-hint">{sourceLink.unavailable}</p>
+            ) : (
+              <select
+                value={sourceLink.currentId ?? ''}
+                onChange={(e) => sourceLink.onChange(e.target.value || null)}
+              >
+                <option value="">
+                  {sourceLink.loading ? 'Loading…' : 'Not linked — no schema checks'}
+                </option>
+                {sourceLink.options.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.title}
+                  </option>
+                ))}
+              </select>
+            )}
+          </Field>
+        )}
+
         <p className="panel-hint">
           Sample rows for a schema. Select a shape to edit it, or press <strong>C</strong> and click
           an instance then its set to record membership — or two instances to record a relationship.

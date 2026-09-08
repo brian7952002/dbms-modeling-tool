@@ -14,6 +14,9 @@ export interface DocBinding {
   dispatch: React.Dispatch<Action>;
   canUndo: boolean;
   canRedo: boolean;
+  /** For a derived model: the diagram this one is checked against. */
+  sourceDiagramId: string | null;
+  setSourceDiagramId: (id: string | null) => void;
   /** Bumped whenever the document changes, local or remote. */
   revision: number;
 }
@@ -56,6 +59,7 @@ export function useDiagramDoc(
   const diagram = useMemo(() => doc.snapshot(), [doc, revision]);
   const title = useMemo(() => doc.title, [doc, revision]);
   const kind = useMemo(() => doc.kind, [doc, revision]);
+  const sourceDiagramId = useMemo(() => doc.sourceDiagramId, [doc, revision]);
 
   // A teammate deleting a shape should drop it from your selection rather than
   // leaving the inspector pointed at something that no longer exists.
@@ -198,6 +202,8 @@ export function useDiagramDoc(
     selection,
     setSelection,
     dispatch,
+    sourceDiagramId,
+    setSourceDiagramId: (id: string | null) => doc.setSourceDiagramId(id),
     canUndo: doc.undoManager.undoStack.length > 0,
     canRedo: doc.undoManager.redoStack.length > 0,
     revision,

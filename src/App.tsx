@@ -27,6 +27,7 @@ import { AccountModal } from './app/AccountModal';
 import { LibraryModal } from './app/LibraryModal';
 import {
   createDiagram,
+  listDiagrams,
   openDiagram,
   persistRealtime,
   type CloudDiagram,
@@ -93,6 +94,8 @@ export default function App() {
     dispatch,
     canUndo,
     canRedo,
+    sourceDiagramId,
+    setSourceDiagramId,
     revision,
   } = useDiagramDoc(
     restored.current ?? { diagram: getModel('eer').samples[0].build(), title: 'Company schema' },
@@ -131,7 +134,88 @@ export default function App() {
 
   /* ---- validation ------------------------------------------------------ */
 
-  const issues = useMemo(() => model.validate(diagram, {}), [model, diagram]);
+  /**
+   * A derived model — an instance diagram — is checked against another
+   * diagram. The options come from the cloud library, because a schema you can
+   * check against has to be one you can actually open.
+   */
+  const [sourceOptions, setSourceOptions] = useState<{ id: string; title: string }[]>([]);
+  const [sourceDiagram, setSourceDiagram] = useState<Diagram | null>(null);
+  const [sourceLoading, setSourceLoading] = useState(false);
+
+  useEffect(() => {
+    if (!model.derivesFrom || !auth.user) {
+      setSourceOptions([]);
+      return;
+    }
+    let live = true;
+    listDiagrams()
+      .then((rows) => {
+        if (!live) return;
+        setSourceOptions(
+          rows
+            .filter((r) => r.kind === model.derivesFrom)
+            .map((r) => ({ id: r.id, title: r.title })),
+        );
+      })
+      .catch(() => setSourceOptions([]));
+    return () => {
+      live = false;
+    };
+  }, [model.derivesFrom, auth.user, cloudDoc?.projectId]);
+
+  useEffect(() => {
+    if (!model.derivesFrom || !sourceDiagramId || !auth.user) {
+      setSourceDiagram(null);
+      return;
+    }
+    let live = true;
+    setSourceLoading(true);
+    openDiagram(sourceDiagramId)
+      .then((loaded) => {
+        if (live) setSourceDiagram(loaded.diagram);
+      })
+      .catch(() => {
+        if (live) setSourceDiagram(null);
+      })
+      .finally(() => {
+        if (live) setSourceLoading(false);
+      });
+    return () => {
+      live = false;
+    };
+  }, [model.derivesFrom, sourceDiagramId, auth.user]);
+
+  const sourceLink = useMemo(
+    () =>
+      model.derivesFrom
+        ? {
+            options: sourceOptions,
+            currentId: sourceDiagramId,
+            onChange: (id: string | null) => setSourceDiagramId(id),
+            loading: sourceLoading,
+            unavailable: !auth.enabled
+              ? 'Cloud sync is not configured for this build.'
+              : !auth.user
+                ? 'Sign in to link a schema from your diagrams.'
+                : undefined,
+          }
+        : undefined,
+    [
+      model.derivesFrom,
+      sourceOptions,
+      sourceDiagramId,
+      setSourceDiagramId,
+      sourceLoading,
+      auth.enabled,
+      auth.user,
+    ],
+  );
+
+  const issues = useMemo(
+    () => model.validate(diagram, { source: sourceDiagram }),
+    [model, diagram, sourceDiagram],
+  );
   const issueByNode = useMemo(() => {
     const map = new Map<Id, 'error' | 'warning'>();
     for (const i of issues) {
@@ -302,6 +386,8 @@ export default function App() {
           diagram,
           title,
           activeProject && canEdit(activeProject.role) ? activeProject.id : null,
+          modelId === 'instance' ? 'instance' : 'eer',
+          sourceDiagramId,
         );
         bindCloudDoc(meta);
         notify(`Saved “${meta.title}”.`);
@@ -876,6 +962,7 @@ export default function App() {
 
         <div className="right-rail">
           <model.Inspector
+            sourceLink={sourceLink}
             diagram={diagram}
             selection={selection}
             title={title}

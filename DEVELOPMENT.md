@@ -209,19 +209,22 @@ Entity sets are labelled regions, instances are dots inside them, membership is 
 and a solid line between two dots is one relationship instance. A relationship-set pill acts as the
 legend; link labels only appear when there are two or more sets to tell apart.
 
-**Not yet built: checking against the schema.** The whole point of an instance diagram is to find
-out whether a constraint says what you meant, and that needs the source EER diagram. The plumbing is
-in place — `ModelTool.derivesFrom = 'eer'`, `diagrams.source_diagram_id` in the database, and a
-`ValidationContext.source` that `validate()` already reads and reports as absent. What remains:
+**Checking against the schema.** Link an EER diagram under *Schema* in the inspector and
+`check.ts` holds the sample data against it: cardinality on the functional side, total
+participation, `(min,max)` bounds, weak-entity ownership, and specialisation — subclass members
+missing from their superclass, one instance in two disjoint subclasses, a superclass member in no
+subclass when the specialisation is total. It reuses `functionalSides()` from
+`models/eer/ddl.ts`, so the Chen-versus-`(min,max)` direction problem in §3 is handled in one place.
 
-- pick a source EER diagram from the same project, and store it on the row
-- check each relationship set against its schema constraint: a 1:N violated by an instance joined to
-  two owners, `(min,max)` bounds exceeded, total participation leaving an instance unconnected
-- weak-entity instances with no owner; subclass instances absent from the superclass set;
-  disjointness violated by an instance in two disjoint subclasses
-- reuse `functionalSides()` from `models/eer/ddl.ts` — the Chen-versus-(min,max) direction problem
-  in §3 applies here too
-- n-ary relationships are out of scope for the first cut; warn rather than mislead
+Recursive and n-ary relationships are reported as *unchecked* rather than guessed at: a link joins
+two dots and which end plays which role cannot be read off it. If that becomes worth doing, it needs
+roles on the links.
+
+Source diagrams come from the cloud library, so linking a schema requires signing in — a schema you
+check against has to be one you can open. The link lives in the CRDT document's `meta`, so it
+travels with the diagram, and is mirrored to `diagrams.source_diagram_id`.
+
+Covered by `check.test.ts`.
 
 ## 7. Real-time collaboration
 
@@ -268,13 +271,12 @@ not. Check that Realtime is enabled for the project if peers never appear.
 ## 8. Backlog, in the order I would do it
 
 1. **Two-browser check of real-time** (§7) — the one thing convergence tests cannot prove.
-2. **Instance-diagram constraint checking** (§6). The plumbing is in; this is the payoff.
-3. **Extend test coverage** to `ddl.ts` mapping for each relationship shape, and the `validate.ts`
+2. **Extend test coverage** to `ddl.ts` mapping for each relationship shape, and the `validate.ts`
    rules for both models.
-4. **Relational (logical) model.** Largely already implied by `models/eer/ddl.ts`: generating it
+3. **Relational (logical) model.** Largely already implied by `models/eer/ddl.ts`: generating it
    from an EER diagram is a strong starting point, with editing on top.
-5. **Physical model.**
-6. Finish the rename (§5): the interface says DBMS Modeling, the repo and file format still say
+4. **Physical model.**
+5. Finish the rename (§5): the interface says DBMS Modeling, the repo and file format still say
    eer-diagram-designer.
 
 ---

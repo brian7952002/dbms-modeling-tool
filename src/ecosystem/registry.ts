@@ -145,6 +145,21 @@ export interface InspectorProps<
   onAddAttribute: (ownerId: Id) => void;
   onAlign: (axis: 'left' | 'centerX' | 'right' | 'top' | 'centerY' | 'bottom') => void;
   onDistribute: (axis: 'x' | 'y') => void;
+  /**
+   * For a model that derives from another: which diagram it is checked
+   * against, and how to change it. Absent when the model stands alone.
+   */
+  sourceLink?: SourceLink;
+}
+
+export interface SourceLink {
+  /** Diagrams of the source model that this user can open. */
+  options: { id: string; title: string }[];
+  currentId: string | null;
+  onChange: (id: string | null) => void;
+  /** Why the picker is unavailable, e.g. not signed in. */
+  unavailable?: string;
+  loading?: boolean;
 }
 
 /** What a model needs beyond its own diagram in order to check it. */

@@ -113,7 +113,7 @@ function uniqueName(taken: Set<string>, base: string): string {
  * In `A --1-- R --N-- B`, one A has N Bs, so it is B that is functional; in
  * `A --(1,N)-- R --(1,1)-- B` the (1,1) sits on B and again marks B functional.
  */
-function functionalSides(e1: Edge, e2: Edge): [boolean, boolean] {
+export function functionalSides(e1: Edge, e2: Edge): [boolean, boolean] {
   const byMinMax = (e: Edge) => (e.max === null ? false : (e.max ?? 1) <= 1);
   if (e1.showMinMax && e2.showMinMax) return [byMinMax(e1), byMinMax(e2)];
 
@@ -125,7 +125,7 @@ function functionalSides(e1: Edge, e2: Edge): [boolean, boolean] {
   return [c1 !== '1', c2 !== '1']; // 1:N — the N-labelled side is functional
 }
 
-const isTotal = (e: Edge) =>
+export const isTotal = (e: Edge) =>
   e.total === true || (e.showMinMax === true && (e.min ?? 0) >= 1);
 
 /* -------------------------------------------------------------------------- */

@@ -44,6 +44,14 @@ disjoint specialisation — are called out as warnings rather than silently drop
 **Sharing and storage.** Autosave to the browser, `.eer.json` files, SVG and PNG export, a shareable
 link that carries the entire diagram in the URL, and optional accounts with a private cloud library.
 
+**Instance diagrams, checked against the schema.** Draw a handful of sample rows for an EER model
+and the checker holds them against its constraints: an instance joined to two owners where the
+schema says one, an instance in no relationship where participation is total, a count outside a
+`(min,max)` bound, a weak-entity instance with no owner, a subclass member missing from its
+superclass or sitting in two disjoint subclasses. Read the other way, it is how you test a
+constraint — if you can draw legal-looking data that violates what you meant, the schema is what
+needs fixing.
+
 **Team projects.** Start a project, hand out a revocable invite link, and work on the same diagrams.
 Members are owners, editors, or viewers, enforced by row-level security rather than by hiding
 buttons. Every change is attributed: a restorable version history with the author on each snapshot,
