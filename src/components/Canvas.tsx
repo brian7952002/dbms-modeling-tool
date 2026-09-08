@@ -5,6 +5,7 @@ import { NodeShape } from './NodeShape';
 import { EdgeShape } from './EdgeShape';
 import { diagramCss, type Theme } from './diagramStyles';
 import { inferEdge } from '../model/factory';
+import { measureText } from '../model/measure';
 
 export type Tool = 'select' | 'connect';
 
@@ -28,6 +29,15 @@ interface Props {
   onAddNodeAt: (kind: NodeKind, p: Point) => void;
   /** Shared with the exporter, which serialises the live SVG. */
   svgRef?: React.MutableRefObject<SVGSVGElement | null>;
+  /** Teammates in the same live session. */
+  peers?: {
+    clientId: string;
+    name: string;
+    color: string;
+    cursor: { x: number; y: number } | null;
+    selection: string[];
+  }[];
+  onCursorMove?: (p: Point | null) => void;
 }
 
 type DragState =
@@ -37,6 +47,10 @@ type DragState =
   | { mode: 'marquee'; start: Point; current: Point; additive: boolean };
 
 const GRID = 20;
+
+/** Width of the pill behind a teammate's cursor label. */
+const measurePeerLabel = (name: string) => Math.round(measureText(name, PEER_LABEL_FONT)) + 14;
+const PEER_LABEL_FONT = '700 10.5px "Segoe UI", system-ui, sans-serif';
 
 export function Canvas({
   diagram,
@@ -51,6 +65,8 @@ export function Canvas({
   issues,
   onAddNodeAt,
   svgRef: externalRef,
+  peers = [],
+  onCursorMove,
 }: Props) {
   const localRef = useRef<SVGSVGElement | null>(null);
   const svgRef = externalRef ?? localRef;
@@ -229,6 +245,7 @@ export function Canvas({
 
   const onPointerMove = (e: React.PointerEvent) => {
     const p = toDiagram(e.clientX, e.clientY);
+    onCursorMove?.(p);
     if (tool === 'connect' && connectFrom) setCursor(p);
     const d = drag.current;
     switch (d.mode) {
@@ -365,6 +382,7 @@ export function Canvas({
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
+      onPointerLeave={() => onCursorMove?.(null)}
       onDragOver={(e) => {
         e.preventDefault();
         e.dataTransfer.dropEffect = 'copy';
@@ -445,6 +463,53 @@ export function Canvas({
               }}
             />
           ))}
+        </g>
+
+        <g className="no-export peers" style={{ pointerEvents: 'none' }}>
+          {peers.flatMap((peer) =>
+            peer.selection
+              .map((id) => nodeById.get(id))
+              .filter((n): n is DiagramNode => !!n)
+              .map((n) => (
+                <rect
+                  key={`${peer.clientId}:${n.id}`}
+                  x={n.x - n.w / 2 - 5}
+                  y={n.y - n.h / 2 - 5}
+                  width={n.w + 10}
+                  height={n.h + 10}
+                  rx={5}
+                  fill="none"
+                  stroke={peer.color}
+                  strokeWidth={1.6}
+                  opacity={0.85}
+                />
+              )),
+          )}
+          {peers.map((peer) =>
+            peer.cursor ? (
+              <g key={peer.clientId} transform={`translate(${peer.cursor.x} ${peer.cursor.y})`}>
+                <path
+                  d="M0 0 L0 14 L4 10.5 L6.5 16 L9 15 L6.5 9.5 L11 9.5 Z"
+                  fill={peer.color}
+                  stroke="#fff"
+                  strokeWidth={1}
+                />
+                <g transform="translate(12 15)">
+                  <rect
+                    x={0}
+                    y={-9}
+                    width={measurePeerLabel(peer.name)}
+                    height={16}
+                    rx={8}
+                    fill={peer.color}
+                  />
+                  <text x={7} y={0} fill="#fff" fontSize={10.5} fontWeight={700}>
+                    {peer.name}
+                  </text>
+                </g>
+              </g>
+            ) : null,
+          )}
         </g>
 
         <g className="no-export overlay" style={{ pointerEvents: 'none' }}>
