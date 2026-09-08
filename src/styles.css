@@ -708,3 +708,51 @@ button.icon:hover { background: var(--ui-hover); }
 @media (max-width: 780px) {
   .projects-layout, .history-layout { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* ---------- modelling ecosystem ---------- */
+
+.model-chip {
+  border: 1px solid var(--ui-border) !important;
+  border-radius: 999px !important;
+  padding: 3px 11px !important;
+  font-size: 11.5px;
+  color: var(--ui-muted);
+  background: var(--ui-hover) !important;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.model-chip:hover { color: var(--ui-ink); border-color: var(--ui-accent) !important; }
+
+.model-list { list-style: none; margin: 0 0 14px; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.model-list li { margin: 0; }
+.model-list button {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius);
+  background: var(--ui-panel);
+  padding: 14px 16px;
+  cursor: pointer;
+}
+.model-list button:hover { background: var(--ui-hover); border-color: var(--ui-accent); }
+.model-list li.current button { border-color: var(--ui-accent); background: var(--ui-hover); }
+
+.model-glyph {
+  font-size: 24px;
+  line-height: 1;
+  width: 40px;
+  height: 40px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--ui-bg);
+  border: 1px solid var(--ui-border);
+}
+.model-text { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.model-text strong { display: flex; align-items: center; gap: 8px; font-size: 13.5px; }
+.model-text em { font-style: normal; line-height: 1.5; color: var(--ui-ink); }
+.model-text .panel-hint { margin: 0; font-size: 11px; }

@@ -21,7 +21,9 @@ cleared: it records what exists, what is decided and why, what is broken, and wh
 JSON/SVG/PNG export, share links, accounts, team projects with roles, invite links, version history
 with attribution, activity feed, real-time collaborative editing with cursors and per-user undo.
 
-**Decided but not built:** instance diagrams (§6), the three-model ecosystem (§5).
+**Ecosystem:** the platform/model seam exists and carries two tools — EER and instance diagrams.
+Logical and physical models are not written yet; each is a `ModelTool` and a line in
+`ecosystem/models.ts`.
 
 ---
 
@@ -57,16 +59,40 @@ cloud affordance explaining what is missing — keep that property.
 
 ```
 src/
-  model/       types, geometry, graph queries, validation, SQL generation, samples, text measurement
-  state/       store.ts — reducer with undo/redo history (the Action union is the editing API)
-  components/  Canvas, NodeShape, EdgeShape, Palette, Inspector, panels, modals
-  cloud/       supabase client, auth context, diagram CRUD, projects, presence
-  export/      SVG serialisation and PNG rasterisation
+  platform/    model-agnostic engine: canvas, geometry, measurement, selection,
+               undo, the Action vocabulary, persistence, export, collab/ (CRDT)
+  ecosystem/   registry.ts (the ModelTool contract), models.ts (what is registered),
+               ModelPicker
+  models/
+    eer/       conceptual: types, factory, graph, validate, ddl, samples, shapes,
+               inspector, palette, styles, help — plus index.ts, the ModelTool
+    instance/  sample data for an EER schema, same shape
+  app/         shell: toolbar and the cloud dialogs
+  cloud/       supabase client, auth, diagram CRUD, projects, presence
 supabase/
   schema.sql   canonical schema: tables, RLS policies, audited write functions
 ```
 
-Two decisions worth not re-deriving:
+**The seam.** `platform` knows only that a node has `{id, kind, name, x, y, w, h}` and an edge joins
+two of them. Everything else is reached through the open `ModelTool`: its shapes, palette,
+inspector, help, connection rules, checks, styling, and optional exports. Two pieces are worth
+understanding:
+
+- `outline(node)` — the shape's boundary, used to clip connectors and hit-test. `null` means an
+  ellipse. This is why the canvas can draw a diamond it knows nothing about.
+- `decorate(diagram)` — per-render values a shape needs but the platform cannot derive, keyed by
+  element id: which way an ISA marker points, which connectors are doubled. Computed once per
+  diagram, not per shape.
+
+Adding the logical or physical model means writing a `ModelTool` and registering it. No platform
+change should be required; if one is, the seam is in the wrong place and it is worth moving rather
+than working around.
+
+Three decisions worth not re-deriving:
+
+- **The `Action` union is the editing API** (`platform/actions.ts`). Shapes and inspectors dispatch
+  it; `useDiagramDoc` turns it into CRDT transactions. Keeping this shape is what let the CRDT
+  migration and the ecosystem refactor happen without rewriting the canvas both times. Preserve it.
 
 - **Diagram styling lives inside the `<svg>` as a `<style>` element** (`components/diagramStyles.ts`).
   SVG export is therefore a clone, a few `remove()` calls and a new `viewBox`. Do not move this
@@ -175,25 +201,27 @@ more than the existing links.
 
 ---
 
-## 6. Planned: instance diagrams
+## 6. Instance diagrams
 
-Decided in conversation, not yet built.
+Built, as the second tool on the seam — which is what proves the seam is real.
 
-- **Notation:** Elmasri instance style — a labelled region per entity set holding small circles for
-  instances, with relationship instances drawn as lines between them.
-- **Linked to a source EER diagram**, chosen from the same project. Entity and relationship sets
-  come from it; `source_diagram_id` carries the link.
-- **The payoff is checking**, not drawing: verify the sample data actually obeys the schema.
-  - a 1:N relationship where an instance is joined to two owners
-  - total participation with an unconnected instance
-  - `(min,max)` bounds violated by the number of links on an instance
-  - a weak-entity instance with no owner
-  - a subclass instance absent from its superclass set; disjointness violated by an instance in two
-    disjoint subclasses
-  - the constraint direction problem from §3 applies here too — reuse `functionalSides()`
-- n-ary relationships: not supported in the first cut. Warn rather than mislead.
+Entity sets are labelled regions, instances are dots inside them, membership is a faint dashed line,
+and a solid line between two dots is one relationship instance. A relationship-set pill acts as the
+legend; link labels only appear when there are two or more sets to tell apart.
 
----
+**Not yet built: checking against the schema.** The whole point of an instance diagram is to find
+out whether a constraint says what you meant, and that needs the source EER diagram. The plumbing is
+in place — `ModelTool.derivesFrom = 'eer'`, `diagrams.source_diagram_id` in the database, and a
+`ValidationContext.source` that `validate()` already reads and reports as absent. What remains:
+
+- pick a source EER diagram from the same project, and store it on the row
+- check each relationship set against its schema constraint: a 1:N violated by an instance joined to
+  two owners, `(min,max)` bounds exceeded, total participation leaving an instance unconnected
+- weak-entity instances with no owner; subclass instances absent from the superclass set;
+  disjointness violated by an instance in two disjoint subclasses
+- reuse `functionalSides()` from `models/eer/ddl.ts` — the Chen-versus-(min,max) direction problem
+  in §3 applies here too
+- n-ary relationships are out of scope for the first cut; warn rather than mislead
 
 ## 7. Real-time collaboration
 
@@ -240,15 +268,14 @@ not. Check that Realtime is enabled for the project if peers never appear.
 ## 8. Backlog, in the order I would do it
 
 1. **Two-browser check of real-time** (§7) — the one thing convergence tests cannot prove.
-2. **Extend test coverage** to `ddl.ts` mapping for each relationship shape, and the `validate.ts`
-   rules.
-3. **Extract the platform/model seam** (§5) while there are only two model types to move — it gets
-   harder with every feature added to `Canvas.tsx`.
-4. **Instance diagrams** (§6), as the first tool built on the new seam. It proves the seam is real.
-5. **Relational (logical) model.** Largely already implied by `ddl.ts`: generating it from an EER
-   diagram is a strong starting point, with editing on top.
-6. **Physical model.**
-7. Product rename (§5), once the ecosystem shell exists to justify it.
+2. **Instance-diagram constraint checking** (§6). The plumbing is in; this is the payoff.
+3. **Extend test coverage** to `ddl.ts` mapping for each relationship shape, and the `validate.ts`
+   rules for both models.
+4. **Relational (logical) model.** Largely already implied by `models/eer/ddl.ts`: generating it
+   from an EER diagram is a strong starting point, with editing on top.
+5. **Physical model.**
+6. Finish the rename (§5): the interface says DBMS Modeling, the repo and file format still say
+   eer-diagram-designer.
 
 ---
 
@@ -267,5 +294,7 @@ Recorded so they are not re-argued.
 | Roles enforced in RLS | The interface hides what you cannot do; the database is what stops you |
 | Yjs CRDT over a lighter broadcast scheme | Only option with a merge guarantee; half-built real-time loses work |
 | Node fields stored individually, not as a blob | A blob makes concurrent edits to one shape last-write-wins |
+| A model registry rather than branching on diagram kind | Adding a model must not mean editing the canvas |
+| Instance diagrams built before logical/physical | Cheapest second tool, so the seam is tested early rather than assumed |
 | Cursors + selection highlights | Chosen as part of the real-time work |
 | Instance diagrams linked with constraint checking | Turns them into a way to test the model, not just draw it |

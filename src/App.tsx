@@ -1,22 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Canvas, type Tool, type Viewport } from './components/Canvas';
-import { Toolbar, type ToolbarAction } from './components/Toolbar';
-import { Palette } from './components/Palette';
-import { Inspector } from './components/Inspector';
-import { IssuesPanel } from './components/IssuesPanel';
-import { Modal } from './components/Modal';
-import { HelpContent } from './components/HelpContent';
-import { cloneSelection } from './state/store';
-import { useDiagramDoc } from './collab/useDiagramDoc';
-import { applyEncodedState, encodeState } from './collab/doc';
-import { RealtimeProvider, type PeerState } from './collab/provider';
-import type { Diagram, Id, NodeKind, Point } from './model/types';
-import { emptyDiagram } from './model/types';
-import { createNode, newId } from './model/factory';
-import { nodeBounds } from './model/geometry';
-import { validate } from './model/validate';
-import { generateDdl } from './model/ddl';
-import { companySample, categorySample } from './model/samples';
+import { Canvas, type Tool, type Viewport } from './platform/Canvas';
+import { Toolbar, type ToolbarAction } from './app/Toolbar';
+import { Palette } from './platform/Palette';
+import { IssuesPanel } from './platform/IssuesPanel';
+import { Modal } from './platform/Modal';
+import { cloneSelection } from './platform/actions';
+import { useDiagramDoc } from './platform/collab/useDiagramDoc';
+import { applyEncodedState, encodeState } from './platform/collab/doc';
+import { RealtimeProvider, type PeerState } from './platform/collab/provider';
+import type { Diagram, Id, Point } from './platform/types';
+import { newId } from './platform/ids';
+import { nodeBounds } from './platform/geometry';
 import {
   decodeShare,
   downloadBlob,
@@ -24,19 +18,21 @@ import {
   fromFile,
   slugify,
   toFile,
-} from './model/serialize';
-import { toPngBlob, toSvgString } from './export/image';
+} from './platform/serialize';
+import { toPngBlob, toSvgString } from './platform/export/image';
+import { getModel, type ModelId } from './ecosystem/registry';
+import { ModelPicker } from './ecosystem/ModelPicker';
 import { useAuth } from './cloud/auth';
-import { AccountModal } from './components/AccountModal';
-import { LibraryModal } from './components/LibraryModal';
+import { AccountModal } from './app/AccountModal';
+import { LibraryModal } from './app/LibraryModal';
 import {
   createDiagram,
   openDiagram,
   persistRealtime,
   type CloudDiagram,
 } from './cloud/diagrams';
-import { ProjectsModal } from './components/ProjectsModal';
-import { HistoryModal } from './components/HistoryModal';
+import { ProjectsModal } from './app/ProjectsModal';
+import { HistoryModal } from './app/HistoryModal';
 import {
   canEdit,
   listProjects,
@@ -71,7 +67,7 @@ function loadPrefs(): Prefs {
   }
 }
 
-function loadAutosave(): { diagram: Diagram; title: string } | null {
+function loadAutosave(): { diagram: Diagram; title: string; model: string } | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
@@ -83,6 +79,12 @@ function loadAutosave(): { diagram: Diagram; title: string } | null {
 
 export default function App() {
   const restored = useRef(loadAutosave());
+  // Which modelling tool is open. Everything model-specific — shapes, palette,
+  // inspector, checks, exports — is reached through it.
+  const [modelId, setModelId] = useState<ModelId>(
+    (restored.current?.model as ModelId) ?? 'eer',
+  );
+  const model = useMemo(() => getModel(modelId), [modelId]);
   const {
     doc,
     diagram,
@@ -92,14 +94,17 @@ export default function App() {
     canUndo,
     canRedo,
     revision,
-  } = useDiagramDoc(restored.current ?? { diagram: companySample(), title: 'Company schema' });
+  } = useDiagramDoc(
+    restored.current ?? { diagram: getModel('eer').samples[0].build(), title: 'Company schema' },
+    model,
+  );
 
   const auth = useAuth();
   const [prefs, setPrefs] = useState<Prefs>(loadPrefs);
   const [tool, setTool] = useState<Tool>('select');
   const [viewport, setViewport] = useState<Viewport>({ x: 40, y: 40, k: 0.75 });
   const [modal, setModal] = useState<
-    null | 'help' | 'sql' | 'share' | 'account' | 'library' | 'projects' | 'history'
+    null | 'help' | 'sql' | 'share' | 'account' | 'library' | 'projects' | 'history' | 'models'
   >(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [activeProject, setActiveProject] = useState<Project | null>(null);
@@ -126,7 +131,7 @@ export default function App() {
 
   /* ---- validation ------------------------------------------------------ */
 
-  const issues = useMemo(() => validate(diagram), [diagram]);
+  const issues = useMemo(() => model.validate(diagram, {}), [model, diagram]);
   const issueByNode = useMemo(() => {
     const map = new Map<Id, 'error' | 'warning'>();
     for (const i of issues) {
@@ -148,14 +153,14 @@ export default function App() {
       try {
         localStorage.setItem(
           STORAGE_KEY,
-          JSON.stringify(toFile(diagram, title)),
+          JSON.stringify(toFile(diagram, title, modelId)),
         );
       } catch {
         /* private mode or quota — autosave is a convenience, not a guarantee */
       }
     }, 400);
     return () => window.clearTimeout(id);
-  }, [diagram, title]);
+  }, [diagram, title, modelId]);
 
   useEffect(() => {
     try {
@@ -434,7 +439,7 @@ export default function App() {
    * there — clicking the palette twice should never stack two shapes.
    */
   const addNodeAt = useCallback(
-    (kind: NodeKind, p: Point) => {
+    (kind: string, p: Point) => {
       let { x, y } = p;
       for (let i = 0; i < 40; i++) {
         const clash = diagram.nodes.some(
@@ -476,14 +481,18 @@ export default function App() {
         }
       }
       const radius = Math.max(owner.w, owner.h) / 2 + 110;
-      const node = createNode('attribute', owner.x + Math.cos(best) * radius, owner.y + Math.sin(best) * radius);
+      const node = model.createNode(
+        'attribute',
+        owner.x + Math.cos(best) * radius,
+        owner.y + Math.sin(best) * radius,
+      );
       dispatch({
         type: 'insertNodes',
         nodes: [node],
         edges: [{ id: newId('e'), kind: 'attribute', source: node.id, target: ownerId }],
       });
     },
-    [diagram],
+    [diagram, model],
   );
 
   const align = useCallback(
@@ -576,21 +585,32 @@ export default function App() {
   }, [diagram, title]);
 
   const loadSample = useCallback(
-    (which: 'company' | 'category') => {
-      const diagram = which === 'company' ? companySample() : categorySample();
-      const title = which === 'company' ? 'Company schema' : 'Union / category example';
+    (sampleId: string) => {
+      const sample = model.samples.find((x) => x.id === sampleId) ?? model.samples[0];
+      if (!sample) return;
+      const diagram = sample.build();
+      const title = sample.title;
       dispatch({ type: 'load', diagram, title, resetHistory: true });
       bindCloudDoc(null);
       window.requestAnimationFrame(() => fitToView(diagram));
     },
-    [bindCloudDoc, fitToView],
+    [bindCloudDoc, fitToView, model, dispatch],
   );
 
   const onToolbarAction = useCallback(
     (action: ToolbarAction) => {
+      if (action.startsWith('sample:')) {
+        loadSample(action.slice('sample:'.length));
+        return;
+      }
       switch (action) {
         case 'new':
-          dispatch({ type: 'load', diagram: emptyDiagram(), title: 'Untitled diagram', resetHistory: true });
+          dispatch({
+            type: 'load',
+            diagram: model.createEmpty(),
+            title: 'Untitled diagram',
+            resetHistory: true,
+          });
           bindCloudDoc(null);
           setViewport({ x: 40, y: 40, k: 1 });
           break;
@@ -600,11 +620,8 @@ export default function App() {
         case 'save':
           saveJson();
           break;
-        case 'sample:company':
-          loadSample('company');
-          break;
-        case 'sample:category':
-          loadSample('category');
+        case 'models':
+          setModal('models');
           break;
         case 'export-svg':
           exportSvg();
@@ -682,6 +699,7 @@ export default function App() {
       fitToView,
       loadSample,
       makeShareLink,
+      model,
       saveJson,
       saveToCloud,
     ],
@@ -797,14 +815,16 @@ export default function App() {
   }, [auth.enabled, auth.user, cloudDoc, cloudState, currentProject, readOnly, peers.length, liveConnected]);
 
   const ddl = useMemo(
-    () => (modal === 'sql' ? generateDdl(diagram, title) : null),
-    [modal, diagram, title],
+    () => (modal === 'sql' ? (model.exports?.sql?.(diagram, title) ?? null) : null),
+    [modal, model, diagram, title],
   );
 
   return (
     <div className="app" data-theme={prefs.theme}>
       <Toolbar
         title={title}
+        modelLabel={model.label}
+        samples={model.samples.map((s) => ({ id: s.id, title: s.title }))}
         tool={tool}
         setTool={setTool}
         canUndo={canUndo}
@@ -824,11 +844,12 @@ export default function App() {
 
       <div className="workspace">
         <div className="left-rail">
-          <Palette onAdd={(kind) => addNodeAt(kind, centerOfView())} />
+          <Palette items={model.palette} onAdd={(kind) => addNodeAt(kind, centerOfView())} />
         </div>
 
         <div className="canvas-wrap" ref={wrapRef}>
           <Canvas
+            model={model}
             diagram={diagram}
             selection={selection}
             dispatch={dispatch}
@@ -854,7 +875,7 @@ export default function App() {
         </div>
 
         <div className="right-rail">
-          <Inspector
+          <model.Inspector
             diagram={diagram}
             selection={selection}
             title={title}
@@ -879,8 +900,8 @@ export default function App() {
       />
 
       {modal === 'help' && (
-        <Modal title="EER Diagram Designer — guide" onClose={() => setModal(null)} wide>
-          <HelpContent />
+        <Modal title={`${model.label} — guide`} onClose={() => setModal(null)} wide>
+          <model.Help />
         </Modal>
       )}
 
@@ -954,6 +975,26 @@ export default function App() {
           </p>
           <textarea className="share-box" readOnly value={shareUrl} rows={5} onFocus={(e) => e.target.select()} />
         </Modal>
+      )}
+
+      {modal === 'models' && (
+        <ModelPicker
+          activeId={modelId}
+          onClose={() => setModal(null)}
+          onChoose={(chosen) => {
+            const tool = getModel(chosen);
+            setModelId(chosen);
+            dispatch({
+              type: 'load',
+              diagram: tool.createEmpty(),
+              title: `Untitled ${tool.label.split('—').pop()?.trim() ?? 'diagram'}`,
+              resetHistory: true,
+            });
+            bindCloudDoc(null);
+            setViewport({ x: 40, y: 40, k: 1 });
+            setModal(null);
+          }}
+        />
       )}
 
       {modal === 'account' && <AccountModal onClose={() => setModal(null)} />}

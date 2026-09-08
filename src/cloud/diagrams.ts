@@ -1,5 +1,5 @@
-import type { Diagram, DiagramFile } from '../model/types';
-import { fromFile, toFile } from '../model/serialize';
+import type { Diagram, DiagramFile } from '../platform/types';
+import { fromFile, toFile } from '../platform/serialize';
 import { requireClient } from './supabase';
 
 export interface CloudDiagram {
