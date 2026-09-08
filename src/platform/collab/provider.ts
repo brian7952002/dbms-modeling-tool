@@ -82,22 +82,43 @@ export class RealtimeProvider {
       Y.applyUpdate(this.doc.ydoc, fromBase64(payload.update), REMOTE_ORIGIN);
     });
 
-    // A joining peer asks for whatever it is missing; everyone already here
-    // answers with just the difference, so a late arrival costs one round trip
+    // A joining peer asks for whatever it is missing, and everyone already here
+    // answers with just the difference — a late arrival costs one round trip
     // rather than a full copy from each of them.
+    //
+    // The answer carries a state vector of its own, because the exchange has to
+    // run both ways. Every client holds structs the others have never seen, and
+    // an edit built on top of those is unintegrable without them: Yjs parks it
+    // as a pending update and it never appears, however long you wait. Asking
+    // only in one direction is what made a second person's work invisible.
     channel.on('broadcast', { event: 'sync-request' }, ({ payload }) => {
       if (!payload?.from || payload.from === this.me.clientId) return;
       const diff = Y.encodeStateAsUpdate(this.doc.ydoc, fromBase64(payload.sv));
       void channel.send({
         type: 'broadcast',
         event: 'sync-reply',
-        payload: { to: payload.from, update: toBase64(diff) },
+        payload: {
+          to: payload.from,
+          from: this.me.clientId,
+          update: toBase64(diff),
+          sv: toBase64(Y.encodeStateVector(this.doc.ydoc)),
+        },
       });
     });
 
     channel.on('broadcast', { event: 'sync-reply' }, ({ payload }) => {
       if (payload?.to !== this.me.clientId || !payload.update) return;
       Y.applyUpdate(this.doc.ydoc, fromBase64(payload.update), REMOTE_ORIGIN);
+      // Answer the state vector that came back with it. This reply carries no
+      // vector of its own, which is what ends the exchange at two hops.
+      if (payload.sv && payload.from) {
+        const diff = Y.encodeStateAsUpdate(this.doc.ydoc, fromBase64(payload.sv));
+        void channel.send({
+          type: 'broadcast',
+          event: 'sync-reply',
+          payload: { to: payload.from, from: this.me.clientId, update: toBase64(diff) },
+        });
+      }
     });
 
     channel.on('broadcast', { event: 'awareness' }, ({ payload }) => {

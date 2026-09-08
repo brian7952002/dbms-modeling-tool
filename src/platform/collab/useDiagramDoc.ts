@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'r
 import type { BaseNode, Diagram, Id, Point } from '../types';
 import type { ModelTool } from '../../ecosystem/registry';
 import type { Action } from '../actions';
-import { DiagramDoc, type DiagramKind } from './doc';
+import { DiagramDoc, applyEncodedState, type DiagramKind } from './doc';
 
 export interface DocBinding {
   doc: DiagramDoc;
@@ -19,6 +19,17 @@ export interface DocBinding {
   setSourceDiagramId: (id: string | null) => void;
   /** Bumped whenever the document changes, local or remote. */
   revision: number;
+  /** Starts a different document. See `reset` below for why this is not `load`. */
+  reset: (next: ResetRequest) => void;
+}
+
+export interface ResetRequest {
+  /** Plain content, used when there is no CRDT state to restore from. */
+  diagram?: Diagram;
+  title: string;
+  kind?: DiagramKind;
+  /** Base64 CRDT state from the stored row, applied verbatim when present. */
+  encodedState?: string | null;
 }
 
 /**
@@ -75,6 +86,46 @@ export function useDiagramDoc(
 
   const setSelection = useCallback((ids: Id[]) => setSelectionState(ids), []);
 
+  /**
+   * Swaps in a brand-new document rather than emptying this one.
+   *
+   * Emptying looks equivalent and is not. A live document is attached to a
+   * broadcast channel, so clearing it *is* an edit: every shape you removed to
+   * make room for the next diagram is deleted for everyone still working in the
+   * room you are leaving, and the diagram you opened then arrives in its place.
+   *
+   * Building a fresh document sidesteps that. Nothing is broadcast, because
+   * nothing happened to the document the provider is bound to; React sees a new
+   * `doc`, tears the old session down and opens the new one. It also keeps each
+   * document's history to its own diagram, instead of accumulating every
+   * diagram this tab has ever opened into the state that gets saved.
+   */
+  const reset = useCallback((next: ResetRequest) => {
+    const fresh = new DiagramDoc();
+    let restored = false;
+    if (next.encodedState) {
+      try {
+        applyEncodedState(fresh, next.encodedState);
+        restored = true;
+      } catch {
+        restored = false;
+      }
+    }
+    if (restored) {
+      // The stored row is the authority on its own title and kind.
+      if (fresh.title !== next.title) fresh.setTitle(next.title);
+      if (next.kind && fresh.kind !== next.kind) fresh.setKind(next.kind);
+    } else {
+      fresh.replace(next.diagram ?? { nodes: [], edges: [] }, next.title, next.kind ?? 'eer');
+    }
+    // Restoring a document is not an edit: nothing about opening a diagram
+    // should be undoable back to whatever was on screen before it.
+    fresh.undoManager.clear();
+    docRef.current = fresh;
+    setSelectionState([]);
+    bump();
+  }, []);
+
   const dispatch = useCallback<React.Dispatch<Action>>(
     (action) => {
       switch (action.type) {
@@ -105,8 +156,7 @@ export function useDiagramDoc(
           return;
 
         case 'load':
-          doc.replace(action.diagram, action.title, doc.kind);
-          setSelectionState([]);
+          reset({ diagram: action.diagram, title: action.title, kind: doc.kind });
           return;
 
         case 'setTitle':
@@ -191,7 +241,7 @@ export function useDiagramDoc(
           return;
       }
     },
-    [doc, model],
+    [doc, model, reset],
   );
 
   return {
@@ -207,6 +257,7 @@ export function useDiagramDoc(
     canUndo: doc.undoManager.undoStack.length > 0,
     canRedo: doc.undoManager.redoStack.length > 0,
     revision,
+    reset,
   };
 }
 

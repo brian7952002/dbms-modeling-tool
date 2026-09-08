@@ -6,7 +6,7 @@ import { IssuesPanel } from './platform/IssuesPanel';
 import { Modal } from './platform/Modal';
 import { cloneSelection } from './platform/actions';
 import { useDiagramDoc } from './platform/collab/useDiagramDoc';
-import { applyEncodedState, encodeState } from './platform/collab/doc';
+import { encodeState } from './platform/collab/doc';
 import { RealtimeProvider, type PeerState } from './platform/collab/provider';
 import type { Diagram, Id, Point } from './platform/types';
 import { newId } from './platform/ids';
@@ -98,6 +98,7 @@ export default function App() {
     sourceDiagramId,
     setSourceDiagramId,
     revision,
+    reset: resetDoc,
   } = useDiagramDoc(
     restored.current ?? { diagram: getModel('eer').samples[0].build(), title: 'Company schema' },
     model,
@@ -336,19 +337,19 @@ export default function App() {
    */
   const openIntoDoc = useCallback(
     (meta: CloudDiagram, loaded: Diagram, loadedTitle: string) => {
-      if (meta.ydoc) {
-        doc.replace({ nodes: [], edges: [] }, loadedTitle, meta.kind);
-        try {
-          applyEncodedState(doc, meta.ydoc);
-        } catch {
-          doc.replace(loaded, loadedTitle, meta.kind);
-        }
-      } else {
-        doc.replace(loaded, loadedTitle, meta.kind);
-      }
+      // A different diagram is a different document. Loading one into the
+      // document already on screen would clear it first, and that clearing is
+      // broadcast: everyone still in the room being left watches the diagram
+      // empty out and refill with somebody else's.
+      resetDoc({
+        diagram: loaded,
+        title: loadedTitle,
+        kind: meta.kind,
+        encodedState: meta.ydoc,
+      });
       bindCloudDoc(meta);
     },
-    [bindCloudDoc, doc],
+    [bindCloudDoc, resetDoc],
   );
 
   /** Discards local edits in favour of what is actually stored. */

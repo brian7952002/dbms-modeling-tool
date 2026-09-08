@@ -58,6 +58,10 @@ export class DiagramDoc {
     this.transact(() => this.meta.set('title', title));
   }
 
+  setKind(kind: DiagramKind) {
+    this.transact(() => this.meta.set('kind', kind));
+  }
+
   setSourceDiagramId(id: string | null) {
     this.transact(() => this.meta.set('sourceDiagramId', id));
   }

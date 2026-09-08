@@ -376,16 +376,43 @@ file also asserts that the samples the app ships raise **no errors** — that is
 that is too eager, which is the failure mode that matters here: a checker crying wolf on correct
 work teaches students to ignore it.
 
-### Not yet verified
+### Two bugs the two-browser test found, and what they teach
 
-The multi-browser path — two real accounts editing the same diagram at once, seeing each other's
-cursors. Convergence is proven; the Supabase Realtime wiring under genuine network conditions is
-not. Check that Realtime is enabled for the project if peers never appear.
+Convergence tests had passed all along. Both of these lived in the *session* around the CRDT, which
+is why wiring two documents together in a test never showed them.
+
+**Join sync ran one way.** The joiner asked the room for what it lacked; nobody asked the joiner.
+Every client holds structs the others have never seen — the meta writes `replace()` makes, the
+sample loaded at startup — so an edit built on top of those was unintegrable for everyone else. Yjs
+does not drop such an update, it parks it in `pendingStructs` awaiting the missing dependency, which
+never arrives. The effect was that **user two's edits never appeared for user one and never would**,
+while user two's own screen looked perfectly correct. A silent, permanent, one-way split.
+`sync-reply` now carries a state vector of its own and the requester answers it, so the exchange runs
+both ways and ends at two hops.
+
+**Opening a diagram emptied the live one.** `openIntoDoc` cleared the document and refilled it. A
+live document is attached to a broadcast channel, so clearing it *is* an edit: everyone still in the
+room being left watched their diagram empty out and refill with the one the leaver had opened. In
+App.tsx the switch happens synchronously, before React tears the provider down, so the wipe went out
+every time. Opening now builds a *new* `DiagramDoc` — see `reset` in `useDiagramDoc.ts` — and React
+swaps sessions. That also stops each document accumulating every diagram the tab ever opened into
+the state that gets saved.
+
+The lesson worth keeping: **a document bound to a channel has no private edits.** Anything done to it
+to prepare for something else is broadcast. Prepare a new document instead.
+
+`provider.test.ts` now runs the real provider over a stand-in channel, and `session.test.ts` covers
+the protocol and the reset seam, so neither can regress quietly.
+
+### Still not verified
+
+Cursors and presence under genuine network conditions. Check that Realtime is enabled for the
+project if peers never appear.
 
 ## 8. Backlog, in the order I would do it
 
-1. **Two-browser check of real-time** (§7) — the one thing convergence tests cannot prove, and the
-   only substantial unknown left in the project.
+1. **Re-run the two-browser check** now the session bugs in §7 are fixed: two accounts, one diagram,
+   edits flowing both ways, and a switch to another diagram leaving the other person untouched.
 2. **Extend test coverage** to the parts still untested: `App.tsx` wiring, the inspectors, and
    `cloud/` (which would need the API stubbed). *(The `validate.ts` rules and `Canvas.tsx`
    interaction are now covered — see §7.)*
