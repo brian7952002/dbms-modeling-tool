@@ -14,7 +14,7 @@ cleared: it records what exists, what is decided and why, what is broken, and wh
 | Live site | https://brian7952002.github.io/dbms-modeling-tool/ |
 | Repo | https://github.com/brian7952002/dbms-modeling-tool (public) |
 | Supabase project ref | `mftxzxdnkozkfpzwryfe` |
-| Deploy | GitHub Actions → Pages, on push to `main` |
+| Deploy | GitHub Actions → Pages, on push to `main`; tests gate the build |
 | Branch `main` | Working. Real-time CRDT collaboration. |
 
 **Shipped and verified:** full Chen/Elmasri EER notation, live model checker, SQL generation,
@@ -352,7 +352,7 @@ convergence check without touching Yjs directly. Better still, write it as a tes
 
 ### Tests
 
-204 tests across nine files; `npm test` runs them in about three seconds.
+204 tests across nine files; `npm test` runs them in about three seconds. CI runs them too, before the build in `.github/workflows/deploy.yml`, so a red test stops the deploy rather than shipping past it.
 
 `src/platform/collab/doc.test.ts` covers concurrent rename-plus-move on one shape, conflicting writes
 to one field, a delete racing an edit, dangling-edge cleanup, three-way convergence, and undo
