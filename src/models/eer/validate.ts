@@ -3,6 +3,7 @@ import type { Issue, Severity } from '../../ecosystem/registry';
 import {
   attributesOf,
   entities,
+  identifyingLinks,
   identifyingOwner,
   isRecursive,
   isaNodes,
@@ -90,9 +91,14 @@ export function validate(d: Diagram): Issue[] {
         );
       }
       if (!identifyingOwner(d, e.id)) {
+        // Separate a missing identifying relationship from one that exists but
+        // only leads to other weak entities, which is the confusing case.
+        const linked = identifyingLinks(d, e.id).length > 0;
         add(
           'error',
-          `Weak entity "${e.name}" is not attached to an identifying relationship with a strong owner.`,
+          linked
+            ? `Weak entity "${e.name}" is identified only by other weak entities; the chain never reaches a strong owner.`
+            : `Weak entity "${e.name}" is not attached to an identifying relationship with a strong owner.`,
           [e.id],
         );
       }

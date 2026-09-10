@@ -322,6 +322,19 @@ describe('weak entities', () => {
     ).toBe(true);
   });
 
+  // A weak entity may own another weak entity: the borrowed key just cascades
+  // down the chain, as long as it bottoms out at a strong entity.
+  it('accepts an ownership chain two levels deep', () => {
+    const s = wellFormed();
+    const mid = s.diagram().nodes.find((n) => n.name === 'Dependent') as EntityNode;
+    const inner = s.entity('Medication', true);
+    s.attr(inner, 'drug_name', { partialKey: true });
+    const r = s.rel('takes', true);
+    s.part(mid, r, { cardinality: '1' });
+    s.part(inner, r, { cardinality: 'N', total: true });
+    expect(validate(s.diagram())).toEqual([]);
+  });
+
   // Two weak entities leaning on each other never reach a real key.
   it('does not accept another weak entity as the owner', () => {
     const s = scene();
@@ -333,7 +346,7 @@ describe('weak entities', () => {
     s.part(a, r);
     s.part(b, r);
     expect(
-      saying(errors(s.diagram()), 'not attached to an identifying relationship'),
+      saying(errors(s.diagram()), 'never reaches a strong owner'),
     ).toBe(true);
   });
 

@@ -127,23 +127,47 @@ export function isaParentOf(d: Diagram, entityId: Id): IsaNode | undefined {
 }
 
 /**
- * For a weak entity, the identifying relationship and the owning entity that
- * supplies the borrowed part of its primary key.
+ * Every identifying relationship this entity hangs off, paired with the other
+ * entity on the far leg. An owner here may itself be weak.
  */
-export function identifyingOwner(
+export function identifyingLinks(
   d: Diagram,
   weakId: Id,
-): { rel: RelationshipNode; owner: EntityNode } | undefined {
+): { rel: RelationshipNode; owner: EntityNode }[] {
+  const links: { rel: RelationshipNode; owner: EntityNode }[] = [];
   for (const e of d.edges) {
     if (e.kind !== 'participation' || e.source !== weakId) continue;
     const rel = nodeById(d, e.target);
     if (!rel || rel.kind !== 'relationship' || !rel.identifying) continue;
-    const owner = participantsOf(d, rel.id).find(
-      (p) => p.entity.id !== weakId && !p.entity.weak,
-    );
-    if (owner) return { rel, owner: owner.entity };
+    for (const p of participantsOf(d, rel.id)) {
+      if (p.entity.id === weakId) continue;
+      links.push({ rel, owner: p.entity });
+    }
   }
-  return undefined;
+  return links;
+}
+
+/**
+ * For a weak entity, the identifying relationship and the owning entity that
+ * supplies the borrowed part of its primary key.
+ *
+ * The owner may itself be weak: ownership chains several levels deep are legal
+ * EER, and the borrowed key simply cascades down. What matters is that the
+ * chain bottoms out at a strong entity, so weak entities that only lean on
+ * each other resolve to no owner at all.
+ */
+export function identifyingOwner(
+  d: Diagram,
+  weakId: Id,
+  seen: ReadonlySet<Id> = new Set(),
+): { rel: RelationshipNode; owner: EntityNode } | undefined {
+  if (seen.has(weakId)) return undefined;
+  const links = identifyingLinks(d, weakId);
+  // A strong owner ends the chain, so prefer one wherever it is on offer.
+  const strong = links.find((l) => !l.owner.weak);
+  if (strong) return strong;
+  const chain = new Set(seen).add(weakId);
+  return links.find((l) => identifyingOwner(d, l.owner.id, chain));
 }
 
 /** Edges touching a node, in either direction. */
