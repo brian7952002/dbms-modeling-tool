@@ -80,6 +80,17 @@ export function diagramCss(theme: Theme): string {
 .eer-svg .n-isa .shape { fill: var(--isa-fill); stroke: var(--isa-line); }
 .eer-svg .n-union .shape { fill: var(--union-fill); stroke: var(--union-line); }
 .eer-svg .n-isa text, .eer-svg .n-union text { font-size: 15px; font-weight: 700; }
+.eer-svg .n-note .note-area { fill: transparent; }
+.eer-svg .n-note .brace {
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.eer-svg .n-note .note-text { font-size: 12.5px; font-weight: 500; fill: var(--ink); }
+.eer-svg .n-note .note-text.placeholder { fill: var(--muted); font-style: italic; }
+.eer-svg .n-note.selected .brace { stroke: var(--accent); }
 .eer-svg .key-underline { stroke: var(--ink); stroke-width: 1.4; }
 .eer-svg .key-underline.partial { stroke-dasharray: 3 2.5; }
 
@@ -115,6 +126,12 @@ export function diagramCss(theme: Theme): string {
   stroke-width: 1.5;
   stroke-dasharray: 4 3;
   opacity: 0.9;
+}
+.eer-svg .resize-handle {
+  fill: var(--bg);
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  cursor: nwse-resize;
 }
 .eer-svg .node { cursor: grab; }
 .eer-svg .node.dragging { cursor: grabbing; }

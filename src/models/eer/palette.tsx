@@ -53,4 +53,21 @@ export const PALETTE: PaletteItem[] = [
       </>
     ),
   },
+  {
+    kind: 'note',
+    label: 'Bracket note',
+    hint: 'Free text with a brace pointing at what it explains. Ignored by the checker and the SQL.',
+    glyph: (
+      <>
+        <path
+          d="M 14 7 q -6 0 -6 5 L 8 17 q 0 5 -6 5 q 6 0 6 5 l 0 5 q 0 5 6 5"
+          {...stroke}
+          stroke="#64748b"
+        />
+        <line x1={20} y1={13} x2={44} y2={13} {...stroke} stroke="#94a3b8" />
+        <line x1={20} y1={20} x2={44} y2={20} {...stroke} stroke="#94a3b8" />
+        <line x1={20} y1={27} x2={36} y2={27} {...stroke} stroke="#94a3b8" />
+      </>
+    ),
+  },
 ];

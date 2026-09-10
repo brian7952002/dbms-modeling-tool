@@ -55,6 +55,18 @@ const isa = (id: Id, x: number, y: number): DiagramNode => ({
   total: false,
 });
 
+const note = (id: Id, body: string, x: number, y: number): DiagramNode => ({
+  id,
+  kind: 'note',
+  name: 'Note',
+  x,
+  y,
+  w: 240,
+  h: 120,
+  body,
+  side: 'left',
+});
+
 /** Two entities far enough apart to be picked out by a marquee individually. */
 const twoEntities = (): Diagram => ({
   nodes: [entity('a', 'STUDENT', 100, 100), entity('b', 'COURSE', 400, 300)],
@@ -577,5 +589,70 @@ describe('rendering', () => {
     const { node } = setup({ selection: ['a'] });
     expect(node('a').getAttribute('class')).toContain('selected');
     expect(node('b').getAttribute('class')).not.toContain('selected');
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Notes                                                                      */
+/* -------------------------------------------------------------------------- */
+
+describe('bracket notes', () => {
+  const withNote = (body = 'Kept denormalised on purpose: the report reads it hot.') => ({
+    nodes: [note('n1', body, 200, 200)],
+    edges: [],
+  });
+
+  it('draws a brace and the wrapped text', () => {
+    const { node } = setup({ diagram: withNote() });
+    expect(node('n1').querySelector('path.brace')).toBeTruthy();
+    const spans = [...node('n1').querySelectorAll('tspan')].map((t) => t.textContent);
+    expect(spans.length).toBeGreaterThan(1);
+    expect(spans.join(' ').replace(/\s+/g, ' ').trim()).toBe(
+      'Kept denormalised on purpose: the report reads it hot.',
+    );
+  });
+
+  it('shows a prompt rather than nothing when the note is empty', () => {
+    const { node } = setup({ diagram: withNote('') });
+    expect(node('n1').textContent).toMatch(/Double-click/);
+    expect(node('n1').querySelector('.note-text')?.classList.contains('placeholder')).toBe(true);
+  });
+
+  it('offers a resize handle only for a selected note', () => {
+    expect(document.querySelector('.resize-handle')).toBeNull();
+    cleanup();
+    setup({ diagram: withNote(), selection: ['n1'] });
+    expect(document.querySelector('.resize-handle')).toBeTruthy();
+  });
+
+  it('does not offer one for shapes sized by their label', () => {
+    setup({ selection: ['a'] });
+    expect(document.querySelector('.resize-handle')).toBeNull();
+  });
+
+  it('resizes from the centre, so the handle tracks the pointer', () => {
+    const { svg, sent } = setup({ diagram: withNote(), selection: ['n1'] });
+    const handle = document.querySelector('.resize-handle') as Element;
+    // The handle starts at the bottom-right corner: (200+120, 200+60).
+    drag(handle, svg, { x: 320, y: 260 }, { x: 360, y: 290 });
+    const patches = sent('updateNode');
+    expect(patches[patches.length - 1].patch).toEqual({ w: 240 + 80, h: 120 + 60 });
+  });
+
+  it('will not shrink below the model’s minimum', () => {
+    const { svg, sent } = setup({ diagram: withNote(), selection: ['n1'] });
+    const handle = document.querySelector('.resize-handle') as Element;
+    drag(handle, svg, { x: 320, y: 260 }, { x: 0, y: 0 });
+    const patches = sent('updateNode');
+    expect(patches[patches.length - 1].patch).toEqual({ w: 140, h: 56 });
+  });
+
+  it('edits the body in a textarea, not the name', () => {
+    const { node, sent } = setup({ diagram: withNote() });
+    fireEvent.doubleClick(node('n1'));
+    const box = document.querySelector('textarea.inline-rename') as HTMLTextAreaElement;
+    expect(box).toBeTruthy();
+    fireEvent.blur(box, { target: { value: 'Two lines\nof reasoning.' } });
+    expect(sent('updateNode').pop()?.patch).toEqual({ body: 'Two lines\nof reasoning.' });
   });
 });

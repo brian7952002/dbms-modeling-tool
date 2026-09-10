@@ -39,3 +39,49 @@ export function measureText(text: string, font = LABEL_FONT): number {
   cache.set(key, width);
   return width;
 }
+
+/**
+ * Greedy word wrap to a pixel width, honouring the newlines the author typed.
+ * A word too long to fit on a line of its own is broken mid-word rather than
+ * left to overflow its shape.
+ */
+export function wrapText(text: string, maxWidth: number, font = LABEL_FONT): string[] {
+  const out: string[] = [];
+  const breakWord = (word: string): string[] => {
+    const parts: string[] = [];
+    let part = '';
+    for (const ch of word) {
+      if (part && measureText(part + ch, font) > maxWidth) {
+        parts.push(part);
+        part = ch;
+      } else {
+        part += ch;
+      }
+    }
+    if (part) parts.push(part);
+    return parts;
+  };
+
+  for (const paragraph of text.split('\n')) {
+    const words = paragraph.split(/\s+/).filter(Boolean);
+    if (words.length === 0) {
+      out.push('');
+      continue;
+    }
+    let line = '';
+    for (const word of words) {
+      const next = line ? `${line} ${word}` : word;
+      if (measureText(next, font) <= maxWidth) {
+        line = next;
+        continue;
+      }
+      if (line) out.push(line);
+      // The word alone may still be too wide, in which case it is split.
+      const parts = measureText(word, font) > maxWidth ? breakWord(word) : [word];
+      out.push(...parts.slice(0, -1));
+      line = parts[parts.length - 1] ?? '';
+    }
+    out.push(line);
+  }
+  return out;
+}

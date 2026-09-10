@@ -20,5 +20,8 @@ export function fitSize(kind: NodeKind, name: string): { w: number; h: number } 
       return isaSize();
     case 'union':
       return { w: 44, h: 44 };
+    case 'note':
+      // Sized by the author, not by the text; this is only the starting box.
+      return { w: 240, h: 120 };
   }
 }

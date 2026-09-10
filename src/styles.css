@@ -371,6 +371,23 @@ button.icon:hover { background: var(--ui-hover); }
   outline: none;
 }
 
+.inline-rename.multiline {
+  height: 100%;
+  text-align: left;
+  font-weight: 500;
+  font-size: 12.5px;
+  line-height: 1.35;
+  resize: none;
+  font-family: inherit;
+}
+
+.inspector textarea.note-body {
+  width: 100%;
+  resize: vertical;
+  font: inherit;
+  line-height: 1.4;
+}
+
 /* ---------- modal ---------- */
 
 .modal-backdrop {

@@ -11,6 +11,7 @@ export function eerOutline(node: BaseNode): Point[] | null {
   const hh = n.h / 2;
   switch (n.kind) {
     case 'entity':
+    case 'note':
       return [
         { x: n.x - hw, y: n.y - hh },
         { x: n.x + hw, y: n.y - hh },

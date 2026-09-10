@@ -277,6 +277,42 @@ export function Inspector({
 
   /* ---- node ------------------------------------------------------------- */
 
+  if (node.kind === 'note') {
+    return (
+      <div className="inspector">
+        <h2>Note</h2>
+        <Field
+          label="Explanation"
+          hint="Free text. It is ignored by the model checker and by the generated SQL."
+        >
+          <textarea
+            className="note-body"
+            rows={7}
+            value={node.body}
+            placeholder="Why this part of the design is the way it is…"
+            onChange={(e) => patchNode(node.id, { body: e.target.value })}
+          />
+        </Field>
+        <Field label="Brace side" hint="Point the brace at whatever the note explains.">
+          <select
+            value={node.side}
+            onChange={(e) => patchNode(node.id, { side: e.target.value as 'left' | 'right' })}
+          >
+            <option value="left">Left of the text</option>
+            <option value="right">Right of the text</option>
+          </select>
+        </Field>
+        <p className="panel-hint">
+          Drag the square handle at the bottom-right corner to stretch the brace
+          over the shapes it refers to.
+        </p>
+        <button type="button" className="danger" onClick={() => dispatch({ type: 'deleteSelection' })}>
+          Delete note
+        </button>
+      </div>
+    );
+  }
+
   const owned = attributesOf(diagram, node.id);
 
   return (

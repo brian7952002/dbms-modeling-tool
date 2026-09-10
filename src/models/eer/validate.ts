@@ -29,6 +29,7 @@ const PLURAL: Record<NodeKind, string> = {
   attribute: 'attributes',
   isa: 'specialisations',
   union: 'unions',
+  note: 'notes',
 };
 
 const plural = (kind: NodeKind) => PLURAL[kind] ?? `${kind}s`;
@@ -51,7 +52,7 @@ export function validate(d: Diagram): Issue[] {
   // ---- Names -------------------------------------------------------------
   const seen = new Map<string, Id[]>();
   for (const n of d.nodes) {
-    if (n.kind === 'isa' || n.kind === 'union') continue;
+    if (n.kind === 'isa' || n.kind === 'union' || n.kind === 'note') continue;
     const label = n.name.trim().toLowerCase();
     if (!label) {
       add('error', `An unnamed ${n.kind} needs a name.`, [n.id]);

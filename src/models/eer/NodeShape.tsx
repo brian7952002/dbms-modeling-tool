@@ -1,7 +1,7 @@
 import { memo } from 'react';
 import type { NodeShapeProps } from '../../ecosystem/registry';
 import type { DiagramNode } from './types';
-import { measureText } from '../../platform/measure';
+import { measureText, wrapText } from '../../platform/measure';
 
 type Props = NodeShapeProps<DiagramNode>;
 
@@ -15,6 +15,36 @@ function trianglePoints(x: number, y: number, w: number, h: number) {
   const hw = w / 2;
   const hh = h / 2;
   return `${x},${y - hh} ${x + hw},${y + hh} ${x - hw},${y + hh}`;
+}
+
+/** How much of a note's width the brace takes, and how deep its tip pokes. */
+const BRACE_BAND = 22;
+const BRACE_TIP = 9;
+const NOTE_PAD = 12;
+const NOTE_LINE = 17;
+
+/**
+ * A vertical curly brace whose spine sits at `x`, running from `y0` to `y1`.
+ * A positive `tip` points the middle prong to the left, so the note's text
+ * reads to the right of it; negative mirrors the whole thing.
+ *
+ * It is drawn rather than typed as a "{" glyph for the same reason the subset
+ * symbol is: the brace has to stretch to whatever height the author drags, and
+ * an exported SVG cannot rely on the app's fonts.
+ */
+function bracePath(x: number, y0: number, y1: number, tip: number): string {
+  const mid = (y0 + y1) / 2;
+  // Shallow curls on a short note, so the arms never cross over each other.
+  const q = Math.max(4, Math.min(14, (y1 - y0) / 4));
+  return [
+    `M ${x + tip} ${y0}`,
+    `q ${-tip} 0 ${-tip} ${q}`,
+    `L ${x} ${mid - q}`,
+    `q 0 ${q} ${-tip} ${q}`,
+    `q ${tip} 0 ${tip} ${q}`,
+    `L ${x} ${y1 - q}`,
+    `q 0 ${q} ${tip} ${q}`,
+  ].join(' ');
 }
 
 /** One EER shape, drawn from its centre point. */
@@ -99,6 +129,43 @@ function NodeShapeImpl({
       shape = <circle className="shape" cx={x} cy={y} r={w / 2} />;
       label = '∪';
       break;
+  }
+
+  if (node.kind === 'note') {
+    const left = x - w / 2;
+    const right = x + w / 2;
+    const top = y - h / 2;
+    const bottom = y + h / 2;
+    const onLeft = node.side !== 'right';
+    // The brace hugs one edge; the text takes the rest of the box.
+    const spine = onLeft ? left + BRACE_BAND : right - BRACE_BAND;
+    const textX = onLeft ? spine + NOTE_PAD : left + NOTE_PAD;
+    const textWidthAvailable = w - BRACE_BAND - NOTE_PAD * 2;
+    const lines = wrapText(node.body || 'Double-click to type your explanation.', textWidthAvailable);
+    const block = (lines.length - 1) * NOTE_LINE;
+
+    return (
+      <g
+        className={classes.join(' ')}
+        data-id={node.id}
+        onPointerDown={(e) => onPointerDown?.(e, node)}
+        onDoubleClick={(e) => onDoubleClick?.(e, node)}
+      >
+        {/* Invisible but hit-testable, so the whole note can be grabbed. */}
+        <rect className="note-area" x={left} y={top} width={w} height={h} />
+        <path className="brace" d={bracePath(spine, top + 4, bottom - 4, onLeft ? BRACE_TIP : -BRACE_TIP)} />
+        <text className={`note-text${node.body ? '' : ' placeholder'}`} x={textX} y={y - block / 2}>
+          {lines.map((line, i) => (
+            <tspan key={i} x={textX} dy={i === 0 ? 0 : NOTE_LINE}>
+              {line || ' '}
+            </tspan>
+          ))}
+        </text>
+        {selected && (
+          <rect className="sel-halo" x={left - 7} y={top - 7} width={w + 14} height={h + 14} rx={6} />
+        )}
+      </g>
+    );
   }
 
   const textWidth = measureText(label);

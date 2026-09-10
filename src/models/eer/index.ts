@@ -97,9 +97,24 @@ export const eerModel: ModelTool<DiagramNode, Edge> = {
   createEdge: (source, target, kind) => createEdge(source, target, kind as Edge['kind']),
   createNode: (kind, x, y) => createNode(kind as DiagramNode['kind'], x, y),
 
-  // Marker shapes carry a fixed glyph, so their size never follows a label.
+  // Marker shapes carry a fixed glyph and a note is sized by hand, so neither
+  // follows its label.
   sizeFor: (node, name) =>
-    node.kind === 'isa' || node.kind === 'union' ? null : fitSize(node.kind, name),
+    node.kind === 'isa' || node.kind === 'union' || node.kind === 'note'
+      ? null
+      : fitSize(node.kind, name),
+
+  // Marker shapes carry a fixed glyph; a note carries a paragraph.
+  inlineEdit: (node) => {
+    if (node.kind === 'isa' || node.kind === 'union') return null;
+    if (node.kind === 'note') return { field: 'body', multiline: true };
+    return { field: 'name' };
+  },
+
+  // A note's box is the span of its brace, so the author drags it; every other
+  // shape is sized by its label.
+  resizable: (node) => node.kind === 'note',
+  minSize: () => ({ w: 140, h: 56 }),
 
   validate: (diagram) => validate(diagram),
 

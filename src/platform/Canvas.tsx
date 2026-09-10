@@ -45,7 +45,8 @@ type DragState =
   | { mode: 'none' }
   | { mode: 'pan'; startClient: Point; startView: Point }
   | { mode: 'move'; last: Point; ids: Id[]; moved: boolean }
-  | { mode: 'marquee'; start: Point; current: Point; additive: boolean };
+  | { mode: 'marquee'; start: Point; current: Point; additive: boolean }
+  | { mode: 'resize'; id: Id; start: Point; w0: number; h0: number; began: boolean };
 
 const GRID = 20;
 
@@ -174,6 +175,21 @@ export function Canvas({
     forceRender((n) => n + 1);
   };
 
+  const onResizePointerDown = (e: React.PointerEvent, node: BaseNode) => {
+    e.stopPropagation();
+    if (e.button !== 0 || tool === 'connect') return;
+    (e.target as Element).setPointerCapture?.(e.pointerId);
+    drag.current = {
+      mode: 'resize',
+      id: node.id,
+      start: toDiagram(e.clientX, e.clientY),
+      w0: node.w,
+      h0: node.h,
+      began: false,
+    };
+    forceRender((n) => n + 1);
+  };
+
   const onEdgePointerDown = (e: React.PointerEvent, edge: BaseEdge) => {
     e.stopPropagation();
     if (e.button !== 0 || tool === 'connect') return;
@@ -225,6 +241,19 @@ export function Canvas({
         }
         dispatch({ type: 'moveNodes', ids: d.ids, dx: p.x - d.last.x, dy: p.y - d.last.y });
         d.last = p;
+        break;
+      }
+      case 'resize': {
+        if (!d.began) {
+          dispatch({ type: 'begin' });
+          d.began = true;
+        }
+        const min = model.minSize?.(nodeById.get(d.id) as never) ?? { w: 40, h: 40 };
+        // The box grows from its centre, so the handle tracks the pointer only
+        // if each edge moves half as far in the node's own width.
+        const w = Math.max(min.w, d.w0 + (p.x - d.start.x) * 2);
+        const h = Math.max(min.h, d.h0 + (p.y - d.start.y) * 2);
+        dispatch({ type: 'updateNode', id: d.id, patch: { w, h }, transient: true });
         break;
       }
       case 'marquee':
@@ -330,6 +359,10 @@ export function Canvas({
       : null;
 
   const editingNode = editing ? nodeById.get(editing) : undefined;
+  /** A model with no opinion edits the name on a single line. */
+  const inlineEditOf = (node: BaseNode) =>
+    model.inlineEdit ? model.inlineEdit(node) : { field: 'name', multiline: false };
+  const editSpec = editingNode ? inlineEditOf(editingNode) : null;
   const fromNode = connectFrom ? nodeById.get(connectFrom) : undefined;
 
   const cursorStyle =
@@ -419,13 +452,30 @@ export function Canvas({
               issue={issues.get(n.id)}
               onPointerDown={onNodePointerDown}
               onDoubleClick={(_e, node) => {
-                // Marker shapes carry a fixed glyph, not an editable label.
                 if (!model.palette.some((p) => p.kind === node.kind)) return;
-                if (node.kind === 'isa' || node.kind === 'union') return;
+                // The model says which shapes have something to edit.
+                if (!inlineEditOf(node)) return;
                 setEditing(node.id);
               }}
             />
           ))}
+        </g>
+
+        <g className="no-export resize-handles">
+          {diagram.nodes
+            .filter((n) => selected.has(n.id) && model.resizable?.(n))
+            .map((n) => (
+              <rect
+                key={n.id}
+                className="resize-handle"
+                x={n.x + n.w / 2 - 5}
+                y={n.y + n.h / 2 - 5}
+                width={10}
+                height={10}
+                rx={2}
+                onPointerDown={(e) => onResizePointerDown(e, n)}
+              />
+            ))}
         </g>
 
         <g className="no-export peers" style={{ pointerEvents: 'none' }}>
@@ -513,33 +563,63 @@ export function Canvas({
           )}
         </g>
 
-        {editingNode && (
+        {editingNode && editSpec && (
           <foreignObject
             className="no-export"
             x={editingNode.x - Math.max(editingNode.w, 110) / 2}
-            y={editingNode.y - 14}
+            y={
+              editSpec.multiline
+                ? editingNode.y - Math.max(editingNode.h, 64) / 2
+                : editingNode.y - 14
+            }
             width={Math.max(editingNode.w, 110)}
-            height={28}
+            height={editSpec.multiline ? Math.max(editingNode.h, 64) : 28}
           >
-            <input
-              className="inline-rename"
-              autoFocus
-              defaultValue={editingNode.name}
-              onPointerDown={(e) => e.stopPropagation()}
-              onBlur={(e) => {
-                dispatch({
-                  type: 'updateNode',
-                  id: editingNode.id,
-                  patch: { name: e.target.value },
-                });
-                setEditing(null);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-                if (e.key === 'Escape') setEditing(null);
-                e.stopPropagation();
-              }}
-            />
+            {editSpec.multiline ? (
+              <textarea
+                className="inline-rename multiline"
+                autoFocus
+                defaultValue={String(
+                  (editingNode as unknown as Record<string, unknown>)[editSpec.field] ?? '',
+                )}
+                onPointerDown={(e) => e.stopPropagation()}
+                onBlur={(e) => {
+                  dispatch({
+                    type: 'updateNode',
+                    id: editingNode.id,
+                    patch: { [editSpec.field]: e.target.value },
+                  });
+                  setEditing(null);
+                }}
+                onKeyDown={(e) => {
+                  // Enter belongs to the text here, so Escape is the way out.
+                  if (e.key === 'Escape') setEditing(null);
+                  e.stopPropagation();
+                }}
+              />
+            ) : (
+              <input
+                className="inline-rename"
+                autoFocus
+                defaultValue={String(
+                  (editingNode as unknown as Record<string, unknown>)[editSpec.field] ?? '',
+                )}
+                onPointerDown={(e) => e.stopPropagation()}
+                onBlur={(e) => {
+                  dispatch({
+                    type: 'updateNode',
+                    id: editingNode.id,
+                    patch: { [editSpec.field]: e.target.value },
+                  });
+                  setEditing(null);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                  if (e.key === 'Escape') setEditing(null);
+                  e.stopPropagation();
+                }}
+              />
+            )}
           </foreignObject>
         )}
       </g>

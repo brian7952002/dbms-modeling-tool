@@ -10,6 +10,7 @@ export const DEFAULT_SIZE: Record<NodeKind, { w: number; h: number }> = {
   attribute: { w: 120, h: 48 },
   isa: { w: 74, h: 54 },
   union: { w: 44, h: 44 },
+  note: { w: 240, h: 120 },
 };
 
 const DEFAULT_NAME: Record<NodeKind, string> = {
@@ -18,6 +19,7 @@ const DEFAULT_NAME: Record<NodeKind, string> = {
   attribute: 'attribute',
   isa: 'ISA',
   union: 'U',
+  note: 'Note',
 };
 
 export function createNode(kind: NodeKind, x: number, y: number): DiagramNode {
@@ -44,6 +46,8 @@ export function createNode(kind: NodeKind, x: number, y: number): DiagramNode {
       return { ...base, kind, name: 'ISA', disjoint: true, total: false };
     case 'union':
       return { ...base, kind, name: 'U', total: false };
+    case 'note':
+      return { ...base, kind, name: 'Note', body: '', side: 'left' };
   }
 }
 
@@ -60,6 +64,8 @@ export function inferEdge(
   b: DiagramNode,
   diagram: Diagram,
 ): { source: Id; target: Id; kind: EdgeKind } | null {
+  if (a.kind === 'note' || b.kind === 'note') return null;
+
   const pair = (k1: NodeKind, k2: NodeKind) =>
     (a.kind === k1 && b.kind === k2) || (a.kind === k2 && b.kind === k1);
   const of = (k: NodeKind) => (a.kind === k ? a : b);

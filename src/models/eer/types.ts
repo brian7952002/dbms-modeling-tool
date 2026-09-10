@@ -9,7 +9,8 @@ export type NodeKind =
   | 'relationship'
   | 'attribute'
   | 'isa'
-  | 'union';
+  | 'union'
+  | 'note';
 
 type NodeBase = BaseNode;
 
@@ -64,12 +65,26 @@ export interface UnionNode extends NodeBase {
   total: boolean;
 }
 
+/**
+ * A bracket note: free text with a brace pointing at the part of the diagram it
+ * explains. Carries no meaning for the schema — it is there to record why the
+ * design is the way it is — so it takes no connectors and no validation.
+ */
+export interface NoteNode extends NodeBase {
+  kind: 'note';
+  /** The explanation itself. Wraps to the note's width; newlines are kept. */
+  body: string;
+  /** Which side the brace sits on, so a note can point either way. */
+  side: 'left' | 'right';
+}
+
 export type DiagramNode =
   | EntityNode
   | RelationshipNode
   | AttributeNode
   | IsaNode
-  | UnionNode;
+  | UnionNode
+  | NoteNode;
 
 export type EdgeKind =
   /** attribute -> owner (entity, relationship, or parent attribute) */
@@ -120,3 +135,4 @@ export const isAttribute = (n: DiagramNode): n is AttributeNode =>
   n.kind === 'attribute';
 export const isIsa = (n: DiagramNode): n is IsaNode => n.kind === 'isa';
 export const isUnion = (n: DiagramNode): n is UnionNode => n.kind === 'union';
+export const isNote = (n: DiagramNode): n is NoteNode => n.kind === 'note';

@@ -60,6 +60,23 @@ export interface ModelTool<
   createNode(kind: string, x: number, y: number): N;
 
   /**
+   * Whether the author sets this shape's box by dragging, rather than it being
+   * sized by its own label. The canvas offers a resize handle when true.
+   */
+  resizable?(node: N): boolean;
+
+  /**
+   * What double-clicking a shape edits in place: which field it writes, and
+   * whether the field needs more than one line. Returning null makes the shape
+   * un-editable on the canvas — a fixed glyph, say. Omitting the hook entirely
+   * means every shape edits its name on one line.
+   */
+  inlineEdit?(node: N): { field: string; multiline?: boolean } | null;
+
+  /** Smallest box a resizable shape may be dragged down to. */
+  minSize?(node: N): { w: number; h: number };
+
+  /**
    * New box for a node whose label changed, so a renamed shape grows to fit.
    * Return null for shapes sized by something other than their text.
    */
