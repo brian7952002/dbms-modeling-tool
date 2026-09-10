@@ -10,7 +10,7 @@ import { encodeState } from './platform/collab/doc';
 import { RealtimeProvider, type PeerState } from './platform/collab/provider';
 import type { Diagram, Id, Point } from './platform/types';
 import { newId } from './platform/ids';
-import { nodeBounds } from './platform/geometry';
+import { nodeBounds, orbitSlot } from './platform/geometry';
 import {
   decodeShare,
   downloadBlob,
@@ -552,8 +552,8 @@ export default function App() {
   );
 
   /**
-   * Places a new attribute in the emptiest direction around its owner and wires
-   * it up, so building out an entity never requires manual dragging.
+   * Places a new attribute in clear space around its owner and wires it up, so
+   * building out an entity never requires manual dragging.
    */
   const addAttribute = useCallback(
     (ownerId: Id) => {
@@ -564,25 +564,10 @@ export default function App() {
         .map((e) => diagram.nodes.find((n) => n.id === e.source))
         .filter((n): n is NonNullable<typeof n> => !!n);
 
-      const used = siblings.map((s) => Math.atan2(s.y - owner.y, s.x - owner.x));
-      let best = -Math.PI / 2;
-      let bestGap = -1;
-      for (let i = 0; i < 24; i++) {
-        const angle = (i / 24) * Math.PI * 2 - Math.PI;
-        const gap = used.length
-          ? Math.min(...used.map((u) => Math.abs(Math.atan2(Math.sin(angle - u), Math.cos(angle - u)))))
-          : Infinity;
-        if (gap > bestGap) {
-          bestGap = gap;
-          best = angle;
-        }
-      }
-      const radius = Math.max(owner.w, owner.h) / 2 + 110;
-      const node = model.createNode(
-        'attribute',
-        owner.x + Math.cos(best) * radius,
-        owner.y + Math.sin(best) * radius,
-      );
+      const node = model.createNode('attribute', owner.x, owner.y);
+      const spot = orbitSlot(owner, node, diagram.nodes, siblings);
+      node.x = spot.x;
+      node.y = spot.y;
       dispatch({
         type: 'insertNodes',
         nodes: [node],

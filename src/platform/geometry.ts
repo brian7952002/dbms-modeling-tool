@@ -11,6 +11,81 @@ export const dist = (a: Point, b: Point) => Math.hypot(b.x - a.x, b.y - a.y);
 export const centerOf = (n: BaseNode): Point => ({ x: n.x, y: n.y });
 
 /**
+ * A free spot orbiting `owner` for a new satellite shape of `size`.
+ *
+ * Directions already taken by `siblings` are avoided so satellites fan out
+ * evenly, and any candidate landing on an `obstacles` box is skipped outright
+ * — a new attribute should never spawn underneath an existing node. The search
+ * widens ring by ring, so the connecting leg stays as short as the canvas
+ * allows; if everything within reach is crowded it steps away diagonally
+ * rather than giving up.
+ */
+export function orbitSlot(
+  owner: BaseNode,
+  size: { w: number; h: number },
+  obstacles: BaseNode[],
+  siblings: BaseNode[],
+): Point {
+  const STEPS = 36;
+  const RINGS = 4;
+  const baseRadius = Math.max(owner.w, owner.h) / 2 + 110;
+
+  const used = siblings.map((s) => Math.atan2(s.y - owner.y, s.x - owner.x));
+  // How far a candidate angle sits from the nearest sibling, wrapping at ±π.
+  const gapAt = (angle: number) =>
+    used.length
+      ? Math.min(
+          ...used.map((u) => Math.abs(Math.atan2(Math.sin(angle - u), Math.cos(angle - u)))),
+        )
+      : Math.PI;
+
+  const clashes = (p: Point) =>
+    obstacles.some(
+      (n) =>
+        n.id !== owner.id &&
+        Math.abs(n.x - p.x) < (n.w + size.w) / 2 + 24 &&
+        Math.abs(n.y - p.y) < (n.h + size.h) / 2 + 18,
+    );
+
+  const at = (angle: number, radius: number): Point => ({
+    x: owner.x + Math.cos(angle) * radius,
+    y: owner.y + Math.sin(angle) * radius,
+  });
+  const angleAt = (i: number) => (i / STEPS) * Math.PI * 2 - Math.PI;
+
+  for (let ring = 0; ring < RINGS; ring++) {
+    let best: Point | null = null;
+    let bestGap = -1;
+    for (let i = 0; i < STEPS; i++) {
+      const angle = angleAt(i);
+      const p = at(angle, baseRadius + ring * 70);
+      if (clashes(p)) continue;
+      const gap = gapAt(angle);
+      if (gap > bestGap) {
+        bestGap = gap;
+        best = p;
+      }
+    }
+    if (best) return best;
+  }
+
+  // Crowded in every direction: take the emptiest one and walk out of the pile.
+  let bestAngle = -Math.PI / 2;
+  let bestGap = -1;
+  for (let i = 0; i < STEPS; i++) {
+    const angle = angleAt(i);
+    const gap = gapAt(angle);
+    if (gap > bestGap) {
+      bestGap = gap;
+      bestAngle = angle;
+    }
+  }
+  let p = at(bestAngle, baseRadius);
+  for (let i = 0; i < 40 && clashes(p); i++) p = { x: p.x + 36, y: p.y + 30 };
+  return p;
+}
+
+/**
  * Point where a ray leaving the node's centre towards `towards` crosses the
  * node's outline. Used to clip connector lines so they touch the shape rather
  * than the centre point.
