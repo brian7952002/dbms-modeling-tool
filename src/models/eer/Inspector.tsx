@@ -62,6 +62,7 @@ export function Inspector({
   title,
   dispatch,
   onAddAttribute,
+  onTidyAttributes,
   onAlign,
   onDistribute,
 }: Props) {
@@ -70,6 +71,11 @@ export function Inspector({
     dispatch({ type: 'updateNode', id, patch });
   const patchEdge = (id: Id, patch: Partial<Edge>) =>
     dispatch({ type: 'updateEdge', id, patch });
+
+  // Every shape that has attributes hanging off it, for the diagram-wide tidy.
+  const tidyTargets = [
+    ...new Set(diagram.edges.filter((e) => e.kind === 'attribute').map((e) => e.target)),
+  ];
 
   /* ---- empty / multi selection ----------------------------------------- */
 
@@ -104,6 +110,16 @@ export function Inspector({
             <dd>{diagram.edges.length}</dd>
           </div>
         </dl>
+        {tidyTargets.length > 0 && (
+          <button
+            type="button"
+            className="subtle"
+            onClick={() => onTidyAttributes(tidyTargets)}
+            title="Spread every shape's attributes out into clear space."
+          >
+            Tidy up all attributes
+          </button>
+        )}
       </div>
     );
   }
@@ -291,6 +307,7 @@ export function Inspector({
             onSelect={select}
             onAdd={() => onAddAttribute(node.id)}
             addLabel="Add attribute"
+            onTidy={() => onTidyAttributes([node.id])}
           />
           <SubList
             title="Specialisation"
@@ -359,6 +376,7 @@ export function Inspector({
             onSelect={select}
             onAdd={() => onAddAttribute(node.id)}
             addLabel="Add attribute"
+            onTidy={() => onTidyAttributes([node.id])}
           />
         </>
       )}
@@ -428,6 +446,7 @@ export function Inspector({
             onSelect={select}
             onAdd={() => onAddAttribute(node.id)}
             addLabel="Add component"
+            onTidy={() => onTidyAttributes([node.id])}
           />
         </>
       )}
@@ -551,6 +570,7 @@ function SubList({
   onSelect,
   onAdd,
   addLabel,
+  onTidy,
 }: {
   title: string;
   items: { id: Id; label: string; note: string }[];
@@ -558,6 +578,8 @@ function SubList({
   onSelect: (id: Id) => void;
   onAdd?: () => void;
   addLabel?: string;
+  /** Offered only once there is something to rearrange. */
+  onTidy?: () => void;
 }) {
   return (
     <section className="sublist">
@@ -576,11 +598,23 @@ function SubList({
           ))}
         </ul>
       )}
-      {onAdd && (
-        <button type="button" className="subtle" onClick={onAdd}>
-          + {addLabel}
-        </button>
-      )}
+      <div className="sublist-actions">
+        {onAdd && (
+          <button type="button" className="subtle" onClick={onAdd}>
+            + {addLabel}
+          </button>
+        )}
+        {onTidy && items.length > 0 && (
+          <button
+            type="button"
+            className="subtle"
+            onClick={onTidy}
+            title="Spread these out into clear space around the shape."
+          >
+            Tidy up
+          </button>
+        )}
+      </div>
     </section>
   );
 }

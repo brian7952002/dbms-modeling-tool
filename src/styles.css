@@ -277,6 +277,7 @@ button, input, select, textarea {
 .inspector button.subtle:hover, .button-grid button:hover { background: var(--ui-hover); }
 .inspector button.danger { color: var(--ui-danger); border-color: color-mix(in srgb, var(--ui-danger) 40%, var(--ui-border)); }
 .inspector button.danger:hover { background: color-mix(in srgb, var(--ui-danger) 12%, transparent); }
+.sublist-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .button-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 
 .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 0; }

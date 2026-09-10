@@ -154,6 +154,8 @@ export interface InspectorProps<
   title: string;
   dispatch: Dispatch<Action>;
   onAddAttribute: (ownerId: Id) => void;
+  /** Re-orbits each owner's attributes into clear space, in one undo step. */
+  onTidyAttributes: (ownerIds: Id[]) => void;
   onAlign: (axis: 'left' | 'centerX' | 'right' | 'top' | 'centerY' | 'bottom') => void;
   onDistribute: (axis: 'x' | 'y') => void;
   /**

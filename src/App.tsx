@@ -4,7 +4,7 @@ import { Toolbar, type ToolbarAction } from './app/Toolbar';
 import { Palette } from './platform/Palette';
 import { IssuesPanel } from './platform/IssuesPanel';
 import { Modal } from './platform/Modal';
-import { cloneSelection } from './platform/actions';
+import { cloneSelection, tidyAttributePlan } from './platform/actions';
 import { useDiagramDoc } from './platform/collab/useDiagramDoc';
 import { encodeState } from './platform/collab/doc';
 import { RealtimeProvider, type PeerState } from './platform/collab/provider';
@@ -577,6 +577,21 @@ export default function App() {
     [diagram, model],
   );
 
+  /**
+   * Re-orbits the attributes of each owner into clear space, in one undo step.
+   */
+  const tidyAttributes = useCallback(
+    (ownerIds: Id[]) => {
+      const moves = tidyAttributePlan(diagram, ownerIds);
+      if (moves.length === 0) return;
+      dispatch({ type: 'begin' });
+      for (const m of moves) {
+        dispatch({ type: 'updateNode', id: m.id, patch: { x: m.x, y: m.y }, transient: true });
+      }
+    },
+    [diagram],
+  );
+
   const align = useCallback(
     (axis: 'left' | 'centerX' | 'right' | 'top' | 'centerY' | 'bottom') => {
       const nodes = diagram.nodes.filter((n) => selection.includes(n.id));
@@ -991,6 +1006,7 @@ export default function App() {
             title={title}
             dispatch={dispatch}
             onAddAttribute={addAttribute}
+            onTidyAttributes={tidyAttributes}
             onAlign={align}
             onDistribute={distribute}
           />
