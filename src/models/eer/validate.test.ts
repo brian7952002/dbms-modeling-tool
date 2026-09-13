@@ -313,6 +313,81 @@ describe('weak entities', () => {
     expect(saying(errors(s.diagram()), 'needs a partial key (discriminator)')).toBe(true);
   });
 
+  /**
+   * A discriminator only tells apart weak entities sharing an owner, so an
+   * identifying relationship that allows just one per owner does not need one.
+   */
+  describe('the partial key is only required when an owner can have several', () => {
+    /** owner --(ownerLeg)-- has --(weakLeg)-- weak, with no partial key. */
+    function withLegs(ownerLeg: Partial<Edge>, weakLeg: Partial<Edge>) {
+      const s = scene();
+      const owner = s.strong('Employee');
+      const weak = s.entity('Passport', true);
+      s.attr(weak, 'issued_on');
+      const r = s.rel('has', true);
+      s.part(owner, r, ownerLeg);
+      s.part(weak, r, weakLeg);
+      return s.diagram();
+    }
+    const wants = (d: Diagram) => saying(errors(d), 'needs a partial key (discriminator)');
+
+    it('lets a 1:1 owner off', () => {
+      expect(wants(withLegs({ cardinality: '1' }, { cardinality: '1' }))).toBe(false);
+    });
+
+    it('still asks when one owner may have many', () => {
+      expect(wants(withLegs({ cardinality: '1' }, { cardinality: 'N' }))).toBe(true);
+    });
+
+    it('reads (1,1) on the owner leg as one per owner', () => {
+      expect(
+        wants(
+          withLegs(
+            { showMinMax: true, min: 1, max: 1 },
+            { showMinMax: true, min: 1, max: 1 },
+          ),
+        ),
+      ).toBe(false);
+    });
+
+    it('reads (1,N) on the owner leg as several per owner', () => {
+      expect(
+        wants(
+          withLegs(
+            { showMinMax: true, min: 1, max: null },
+            { showMinMax: true, min: 1, max: 1 },
+          ),
+        ),
+      ).toBe(true);
+    });
+
+    it('keeps asking on an n-ary identifying relationship, which has no single owner leg', () => {
+      const s = scene();
+      const a = s.strong('Employee');
+      const b = s.strong('Project');
+      const weak = s.entity('Assignment', true);
+      s.attr(weak, 'hours');
+      const r = s.rel('assigns', true);
+      s.part(a, r, { cardinality: '1' });
+      s.part(b, r, { cardinality: '1' });
+      s.part(weak, r, { cardinality: '1' });
+      expect(wants(s.diagram())).toBe(true);
+    });
+
+    it('keeps asking when no owner resolves at all', () => {
+      const s = scene();
+      const weak = s.entity('Orphan', true);
+      s.attr(weak, 'label');
+      expect(wants(s.diagram())).toBe(true);
+    });
+
+    it('accepts a 1:1 weak entity as clean overall', () => {
+      expect(validate(withLegs({ cardinality: '1' }, { cardinality: '1', total: true }))).toEqual(
+        [],
+      );
+    });
+  });
+
   it('requires an identifying relationship with a strong owner', () => {
     const s = scene();
     const weak = s.entity('Dependent', true);

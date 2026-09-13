@@ -137,3 +137,70 @@ describe('the relational checker', () => {
     expect(errors.some((e) => e.message.includes('maps'))).toBe(true);
   });
 });
+
+/* -------------------------------------------------------------------------- */
+
+describe('a weak entity whose owner may only have one', () => {
+  /** EMPLOYEE 1:1 PASSPORT, identifying, and no discriminator to be had. */
+  function oneToOne() {
+    const e = (name: string, weak: boolean) => ({
+      id: name,
+      kind: 'entity' as const,
+      name,
+      x: 0,
+      y: 0,
+      w: 140,
+      h: 60,
+      weak,
+    });
+    const attr = (id: string, name: string, owner: string, key = false) => ({
+      node: {
+        id,
+        kind: 'attribute' as const,
+        name,
+        x: 0,
+        y: 0,
+        w: 120,
+        h: 48,
+        key,
+        partialKey: false,
+        multivalued: false,
+        derived: false,
+        dataType: key ? 'INTEGER' : 'DATE',
+        nullable: false,
+      },
+      edge: { id: `x${id}`, kind: 'attribute' as const, source: id, target: owner },
+    });
+    const ssn = attr('a1', 'ssn', 'Employee', true);
+    const issued = attr('a2', 'issued_on', 'Passport');
+    return {
+      nodes: [
+        e('Employee', false),
+        e('Passport', true),
+        { id: 'R', kind: 'relationship' as const, name: 'holds', x: 0, y: 0, w: 130, h: 74, identifying: true },
+        ssn.node,
+        issued.node,
+      ],
+      edges: [
+        ssn.edge,
+        issued.edge,
+        { id: 'p1', kind: 'participation' as const, source: 'Employee', target: 'R', cardinality: '1' as const, total: false },
+        { id: 'p2', kind: 'participation' as const, source: 'Passport', target: 'R', cardinality: '1' as const, total: true },
+      ],
+    };
+  }
+
+  it('is keyed on the borrowed owner key alone', () => {
+    const { diagram } = relationalFromEer(oneToOne() as never);
+    const passport = diagram.nodes.find((n) => n.name === 'passport');
+    expect(passport).toBeDefined();
+    expect(readColumns(passport!).filter((c) => c.pk).map((c) => c.name)).toEqual([
+      'employee_ssn',
+    ]);
+  });
+
+  it('produces a schema the relational checker accepts', () => {
+    const { diagram } = relationalFromEer(oneToOne() as never);
+    expect(validate(diagram).filter((i) => i.severity === 'error')).toEqual([]);
+  });
+});

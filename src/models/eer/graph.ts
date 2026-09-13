@@ -126,22 +126,29 @@ export function isaParentOf(d: Diagram, entityId: Id): IsaNode | undefined {
   return isaParentsOf(d, entityId)[0];
 }
 
+/** A weak entity's link to one owner, with both legs of the identifying diamond. */
+export interface IdentifyingLink {
+  rel: RelationshipNode;
+  owner: EntityNode;
+  /** The weak entity's own leg. */
+  weakEdge: Edge;
+  /** The owner's leg, which is what says how many of the weak entity an owner may have. */
+  ownerEdge: Edge;
+}
+
 /**
  * Every identifying relationship this entity hangs off, paired with the other
  * entity on the far leg. An owner here may itself be weak.
  */
-export function identifyingLinks(
-  d: Diagram,
-  weakId: Id,
-): { rel: RelationshipNode; owner: EntityNode }[] {
-  const links: { rel: RelationshipNode; owner: EntityNode }[] = [];
+export function identifyingLinks(d: Diagram, weakId: Id): IdentifyingLink[] {
+  const links: IdentifyingLink[] = [];
   for (const e of d.edges) {
     if (e.kind !== 'participation' || e.source !== weakId) continue;
     const rel = nodeById(d, e.target);
     if (!rel || rel.kind !== 'relationship' || !rel.identifying) continue;
     for (const p of participantsOf(d, rel.id)) {
       if (p.entity.id === weakId) continue;
-      links.push({ rel, owner: p.entity });
+      links.push({ rel, owner: p.entity, weakEdge: e, ownerEdge: p.edge });
     }
   }
   return links;
@@ -160,7 +167,7 @@ export function identifyingOwner(
   d: Diagram,
   weakId: Id,
   seen: ReadonlySet<Id> = new Set(),
-): { rel: RelationshipNode; owner: EntityNode } | undefined {
+): IdentifyingLink | undefined {
   if (seen.has(weakId)) return undefined;
   const links = identifyingLinks(d, weakId);
   // A strong owner ends the chain, so prefer one wherever it is on offer.

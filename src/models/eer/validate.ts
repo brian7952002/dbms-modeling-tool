@@ -1,10 +1,12 @@
 import type { Diagram, Id, NodeKind } from './types';
 import type { Issue, Severity } from '../../ecosystem/registry';
+import { functionalSides } from './ddl';
 import {
   attributesOf,
   entities,
   identifyingLinks,
   identifyingOwner,
+  type IdentifyingLink,
   isRecursive,
   isaNodes,
   isaParentOf,
@@ -33,6 +35,29 @@ const PLURAL: Record<NodeKind, string> = {
 };
 
 const plural = (kind: NodeKind) => PLURAL[kind] ?? `${kind}s`;
+
+/**
+ * Whether a weak entity actually needs a discriminator.
+ *
+ * The partial key exists only to tell apart the weak entities that share one
+ * owner, so it earns its place only when an owner can have more than one of
+ * them. An identifying relationship that gives each owner at most one — a 1:1
+ * ratio, or (1,1) on the owner's leg — pins the weak entity down with the
+ * borrowed key by itself, and demanding a discriminator there invents a column
+ * the design does not need.
+ *
+ * Anything beyond a plain owner/weak pair keeps the requirement: an n-ary
+ * identifying relationship has no single owner leg to read, so the safe
+ * reading is that the discriminator is still doing work.
+ */
+function needsDiscriminator(d: Diagram, link: IdentifyingLink | undefined): boolean {
+  if (!link) return true;
+  if (participantsOf(d, link.rel.id).length !== 2) return true;
+  // functionalSides normalises the two notations, which read in opposite
+  // directions; the owner's entry is "this owner takes part in at most one".
+  const [ownerTakesAtMostOne] = functionalSides(link.ownerEdge, link.weakEdge);
+  return !ownerTakesAtMostOne;
+}
 
 /**
  * Structural checks against the rules of EER modelling. These are the mistakes
@@ -84,14 +109,15 @@ export function validate(d: Diagram): Issue[] {
       add('warning', `Entity "${e.name}" has no attributes.`, [e.id]);
     }
     if (e.weak) {
-      if (partialKeyAttributes(d, e.id).length === 0) {
+      const owner = identifyingOwner(d, e.id);
+      if (partialKeyAttributes(d, e.id).length === 0 && needsDiscriminator(d, owner)) {
         add(
           'error',
           `Weak entity "${e.name}" needs a partial key (discriminator).`,
           [e.id],
         );
       }
-      if (!identifyingOwner(d, e.id)) {
+      if (!owner) {
         // Separate a missing identifying relationship from one that exists but
         // only leads to other weak entities, which is the confusing case.
         const linked = identifyingLinks(d, e.id).length > 0;
