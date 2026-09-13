@@ -1,8 +1,8 @@
 import { memo } from 'react';
 import type { NodeShapeProps } from '../../ecosystem/registry';
 import { measureText } from '../../platform/measure';
-import { HEADER_H, ROW_H } from './factory';
-import { readColumns, type DiagramNode } from './types';
+import { FOOTER_GAP, HEADER_H, ROW_H } from './factory';
+import { readColumns, readUniques, uniqueColumnNames, type DiagramNode } from './types';
 
 type Props = NodeShapeProps<DiagramNode>;
 
@@ -13,6 +13,9 @@ function NodeShapeImpl({ node, selected, decoration, issue, onPointerDown, onDou
   const left = x - w / 2;
   const top = y - h / 2;
   const columns = readColumns(node);
+  // Shown as DDL lines rather than per-column badges: a composite key needs to
+  // show which columns it spans and in what order, and a badge cannot.
+  const uniques = readUniques(node).filter((u) => u.columns.length > 0);
   // Which columns take part in a foreign key, so they can be marked.
   const fkColumns = (decoration?.fkColumns as Set<string> | undefined) ?? new Set<string>();
 
@@ -56,6 +59,36 @@ function NodeShapeImpl({ node, selected, decoration, issue, onPointerDown, onDou
           </g>
         );
       })}
+
+      {uniques.length > 0 && (
+        <g className="table-constraints">
+          <path
+            className="header-rule"
+            d={`M ${left} ${
+              top + HEADER_H + Math.max(1, columns.length) * ROW_H + FOOTER_GAP / 2
+            } H ${left + w}`}
+          />
+          {uniques.map((u, i) => (
+            <text
+              key={u.id}
+              className="constraint-line"
+              x={left + 12}
+              y={
+                top +
+                HEADER_H +
+                Math.max(1, columns.length) * ROW_H +
+                FOOTER_GAP +
+                i * ROW_H +
+                ROW_H / 2 +
+                3
+              }
+              dominantBaseline="central"
+            >
+              UNIQUE ({uniqueColumnNames(node, u).join(', ')})
+            </text>
+          ))}
+        </g>
+      )}
 
       {columns.length === 0 && (
         <text className="column-empty" x={x} y={top + HEADER_H + ROW_H / 2 + 3} textAnchor="middle" dominantBaseline="central">

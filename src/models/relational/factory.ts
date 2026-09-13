@@ -3,6 +3,7 @@ import { measureText } from '../../platform/measure';
 import type { BaseNode } from '../../platform/types';
 import {
   columnKey,
+  type UniqueConstraint,
   readColumns,
   type Column,
   type Diagram,
@@ -16,6 +17,8 @@ import {
 
 export const HEADER_H = 30;
 export const ROW_H = 22;
+/** Space above the constraint block, where its separating rule sits. */
+export const FOOTER_GAP = 6;
 const PAD_X = 28;
 
 const ROW_FONT = '400 12px "Cascadia Mono", ui-monospace, Consolas, monospace';
@@ -27,7 +30,12 @@ const MARKER_ALLOWANCE = 34; // "FK " prefix and the NOT NULL dot
 const COLUMN_GAP = 16;
 
 /** A table is exactly as tall as its columns and as wide as its widest row. */
-export function sizeForTable(name: string, columns: Column[]): { w: number; h: number } {
+export function sizeForTable(
+  name: string,
+  columns: Column[],
+  /** Constraint lines shown under the columns, already rendered as text. */
+  uniqueLines: string[] = [],
+): { w: number; h: number } {
   const widest = columns.reduce(
     (m, c) =>
       Math.max(
@@ -36,10 +44,27 @@ export function sizeForTable(name: string, columns: Column[]): { w: number; h: n
       ),
     0,
   );
+  const constraintWidth = uniqueLines.reduce(
+    (m, line) => Math.max(m, measureText(line, TYPE_FONT)),
+    0,
+  );
   return {
-    w: Math.max(200, Math.round(Math.max(widest + PAD_X, measureText(name) + PAD_X))),
-    h: HEADER_H + Math.max(1, columns.length) * ROW_H + 8,
+    w: Math.max(
+      200,
+      Math.round(
+        Math.max(widest + PAD_X, measureText(name) + PAD_X, constraintWidth + PAD_X),
+      ),
+    ),
+    h:
+      HEADER_H +
+      Math.max(1, columns.length) * ROW_H +
+      (uniqueLines.length > 0 ? uniqueLines.length * ROW_H + FOOTER_GAP : 0) +
+      8,
   };
+}
+
+export function makeUnique(columns: string[] = []): UniqueConstraint {
+  return { id: newId('u'), columns };
 }
 
 export function makeColumn(partial: Partial<Column> = {}): Column {

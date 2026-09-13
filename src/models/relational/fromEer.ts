@@ -1,7 +1,14 @@
 import type { Diagram as EerDiagram } from '../eer/types';
 import { mapToRelational } from '../eer/ddl';
-import { makeColumn, makeTable } from './factory';
-import type { Column, Diagram, Edge, TableNode } from './types';
+import { makeColumn, makeTable, makeUnique, sizeForTable } from './factory';
+import {
+  uniqueKey,
+  uniqueLines,
+  type Column,
+  type Diagram,
+  type Edge,
+  type TableNode,
+} from './types';
 import { newId } from '../../platform/ids';
 
 const COL_GAP = 90;
@@ -43,17 +50,31 @@ export function relationalFromEer(schema: EerDiagram): {
         dataType: c.type,
         notNull: c.notNull,
         pk: table.pk.includes(c.name),
-        unique: table.uniques.some((u) => u.length === 1 && u[0] === c.name),
+        // Candidate keys become table-level constraints below, whatever their
+        // width, so the inline flag is left for hand-typed one-column uniques.
+        unique: false,
       }),
     );
 
+    const byName = new Map<string, string>();
+    table.columns.forEach((c, i) => byName.set(c.name, columns[i].id));
+
     const node = makeTable(table.name, 0, 0, columns);
+    const record = node as unknown as Record<string, unknown>;
+    node.uniqueOrder = [];
+    for (const group of table.uniques) {
+      const ids = group.map((name) => byName.get(name)).filter((id): id is string => !!id);
+      if (ids.length !== group.length) continue;
+      const constraint = makeUnique(ids);
+      record[uniqueKey(constraint.id)] = constraint;
+      node.uniqueOrder.push(constraint.id);
+    }
+    // The box has to grow for the constraint block it is now carrying.
+    Object.assign(node, sizeForTable(table.name, columns, uniqueLines(node)));
     node.x = cursorX + node.w / 2;
     node.y = cursorY + node.h / 2;
     nodes.push(node);
 
-    const byName = new Map<string, string>();
-    table.columns.forEach((c, i) => byName.set(c.name, columns[i].id));
     columnIdByTable.set(table.name, byName);
 
     rowHeight = Math.max(rowHeight, node.h);

@@ -18,7 +18,7 @@ import { EdgeShape } from './EdgeShape';
 import { Inspector } from './Inspector';
 import { Help } from './Help';
 import { PALETTE } from './palette';
-import { readColumn, readColumns, type Diagram, type DiagramNode, type Edge, type Id } from './types';
+import { readColumn, readColumns, type Diagram, type DiagramNode, type Edge, type Id, uniqueLines } from './types';
 
 /**
  * Marks which columns take part in a foreign key, and labels each arrow with
@@ -88,7 +88,7 @@ export const relationalModel: ModelTool<DiagramNode, Edge> = {
   createNode: (kind, x, y) => createNode(kind as 'table', x, y),
   createEdge: (source, target, kind) => createEdge(source, target, kind as Edge['kind']),
   // A table's box is sized by its columns, not only its name.
-  sizeFor: (node, name) => sizeForTable(name, readColumns(node)),
+  sizeFor: (node, name) => sizeForTable(name, readColumns(node), uniqueLines(node)),
 
   validate: (diagram) => validate(diagram),
 

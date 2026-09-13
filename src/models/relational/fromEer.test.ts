@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { relationalFromEer } from './fromEer';
 import { generateDdl as relationalDdl } from './ddl';
 import { validate } from './validate';
-import { readColumns } from './types';
+import { readColumns, readUniques, uniqueColumnNames } from './types';
 import { companySample, categorySample } from '../eer/samples';
 import { generateDdl as eerDdl } from '../eer/ddl';
 
@@ -264,10 +264,37 @@ describe('alternate keys', () => {
     expect(sql).not.toMatch(/UNIQUE/);
   });
 
+  /** Every alternate key's columns, as names, from the derived table. */
+  const constraintsOf = (altKeys: string[][]) => {
+    const { diagram } = relationalFromEer(dept(altKeys) as never);
+    const table = diagram.nodes.find((n) => n.name === 'department')!;
+    return readUniques(table).map((u) => uniqueColumnNames(table, u));
+  };
+
   it('carries a single-column group into the relational diagram', () => {
-    const { diagram } = relationalFromEer(dept([['a_code']]) as never);
-    const table = diagram.nodes.find((n) => n.name === 'department');
-    const code = readColumns(table!).find((c) => c.name === 'code');
-    expect(code?.unique).toBe(true);
+    expect(constraintsOf([['a_code']])).toEqual([['code']]);
+  });
+
+  it('carries a composite group across, which a per-column flag could not', () => {
+    expect(constraintsOf([['a_code', 'a_year']])).toEqual([['code', 'year']]);
+  });
+
+  it('carries each group separately', () => {
+    expect(constraintsOf([['a_code'], ['a_year']])).toEqual([['code'], ['year']]);
+  });
+
+  it('grows the table box to fit the constraint block', () => {
+    const plain = relationalFromEer(dept([]) as never).diagram.nodes.find(
+      (n) => n.name === 'department',
+    )!;
+    const withKeys = relationalFromEer(dept([['a_code', 'a_year']]) as never).diagram.nodes.find(
+      (n) => n.name === 'department',
+    )!;
+    expect(withKeys.h).toBeGreaterThan(plain.h);
+  });
+
+  it('round-trips back out as SQL from the relational side too', () => {
+    const { diagram } = relationalFromEer(dept([['a_code', 'a_year']]) as never);
+    expect(relationalDdl(diagram, 'Uni').sql).toMatch(/UNIQUE \(code, year\)/);
   });
 });

@@ -1,7 +1,12 @@
 import type { InspectorProps } from '../../ecosystem/registry';
 import { COMMON_TYPES } from '../eer/ddl';
-import { makeColumn, sizeForTable } from './factory';
-import { columnKey, readColumn, readColumns, type Column, type DiagramNode, type Edge, type Id } from './types';
+import { makeColumn, makeUnique, sizeForTable } from './factory';
+import { columnKey, readColumn, readColumns, type Column, type DiagramNode, type Edge, type Id,
+  readUniques,
+  uniqueKey,
+  uniqueLines,
+  type UniqueConstraint,
+} from './types';
 
 type Props = InspectorProps<DiagramNode, Edge>;
 
@@ -31,9 +36,27 @@ export function Inspector({ diagram, selection, title, dispatch }: Props) {
   const writeColumns = (table: DiagramNode, columns: Column[]) => {
     const patch: Record<string, unknown> = {
       columnOrder: columns.map((c) => c.id),
-      ...sizeForTable(table.name, columns),
+      ...sizeForTable(table.name, columns, uniqueLines(table)),
     };
     for (const c of columns) patch[columnKey(c.id)] = c;
+    dispatch({ type: 'updateNode', id: table.id, patch });
+  };
+
+  /**
+   * Writes the whole constraint list. A removed constraint leaves its own
+   * `uniq:` key behind, exactly as a removed column leaves its `col:` key —
+   * `uniqueOrder` is what decides which ones exist.
+   */
+  const writeUniques = (table: DiagramNode, next: UniqueConstraint[]) => {
+    const patch: Record<string, unknown> = { uniqueOrder: next.map((u) => u.id) };
+    for (const u of next) patch[uniqueKey(u.id)] = u;
+    const columns = readColumns(table);
+    const name = new Map(columns.map((c) => [c.id, c.name]));
+    const lines = next
+      .map((u) => u.columns.map((id) => name.get(id)).filter(Boolean))
+      .filter((names) => names.length > 0)
+      .map((names) => `UNIQUE (${names.join(', ')})`);
+    Object.assign(patch, sizeForTable(table.name, columns, lines));
     dispatch({ type: 'updateNode', id: table.id, patch });
   };
 
@@ -51,6 +74,7 @@ export function Inspector({ diagram, selection, title, dispatch }: Props) {
         ...sizeForTable(
           table.name,
           readColumns(table).map((c) => (c.id === columnId ? next : c)),
+          uniqueLines(table),
         ),
       },
     });
@@ -211,6 +235,8 @@ export function Inspector({ diagram, selection, title, dispatch }: Props) {
   }
 
   const columns = readColumns(table);
+  const uniques = readUniques(table);
+  const nameOf = new Map(columns.map((c) => [c.id, c.name]));
 
   return (
     <div className="inspector">
@@ -223,7 +249,10 @@ export function Inspector({ diagram, selection, title, dispatch }: Props) {
             dispatch({
               type: 'updateNode',
               id: table.id,
-              patch: { name: e.target.value, ...sizeForTable(e.target.value, columns) },
+              patch: {
+                name: e.target.value,
+                ...sizeForTable(e.target.value, columns, uniqueLines(table)),
+              },
             })
           }
         />
@@ -315,6 +344,77 @@ export function Inspector({ diagram, selection, title, dispatch }: Props) {
         >
           + Add column
         </button>
+      </section>
+
+      <section className="sublist">
+        <h3>Unique constraints</h3>
+        {columns.length === 0 ? (
+          <p className="panel-hint">Add some columns first.</p>
+        ) : (
+          <>
+            <p className="panel-hint">
+              Candidate keys besides the primary one. A constraint over several
+              columns is unique as a combination, not column by column.
+            </p>
+            {uniques.map((u, i) => (
+              <div className="alt-key-group" key={u.id}>
+                <div className="alt-key-head">
+                  <strong>
+                    UNIQUE ({u.columns.map((id) => nameOf.get(id)).filter(Boolean).join(', ') || '—'})
+                  </strong>
+                  <button
+                    type="button"
+                    className="subtle"
+                    onClick={() => writeUniques(table, uniques.filter((_, j) => j !== i))}
+                  >
+                    Remove
+                  </button>
+                </div>
+                <div className="chips">
+                  {columns.map((c) => {
+                    const on = u.columns.includes(c.id);
+                    return (
+                      <button
+                        key={c.id}
+                        type="button"
+                        className={`chip${on ? ' on' : ''}`}
+                        aria-pressed={on}
+                        onClick={() =>
+                          writeUniques(
+                            table,
+                            uniques.map((x, j) =>
+                              j === i
+                                ? {
+                                    ...x,
+                                    // Held in column order, so the constraint
+                                    // reads the same way the table does.
+                                    columns: on
+                                      ? x.columns.filter((id) => id !== c.id)
+                                      : columns
+                                          .filter((col) => col.id === c.id || x.columns.includes(col.id))
+                                          .map((col) => col.id),
+                                  }
+                                : x,
+                            ),
+                          )
+                        }
+                      >
+                        {c.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+            <button
+              type="button"
+              className="subtle"
+              onClick={() => writeUniques(table, [...uniques, makeUnique()])}
+            >
+              + Add unique constraint
+            </button>
+          </>
+        )}
       </section>
 
       <Field label="Note">

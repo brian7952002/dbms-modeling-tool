@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { validate } from './validate';
-import { makeColumn, makeTable } from './factory';
+import { makeColumn, makeTable, makeUnique } from './factory';
 import { relationalFromEer } from './fromEer';
 import { companySample, categorySample } from '../eer/samples';
-import type { Column, Diagram, Edge, TableNode } from './types';
+import { uniqueKey, type Column, type Diagram, type Edge, type TableNode } from './types';
 
 /* -------------------------------------------------------------------------- */
 /* Builders                                                                   */
@@ -246,5 +246,89 @@ describe('the schemas the mapper produces', () => {
 
   it('passes the checker for the category sample', () => {
     expect(errors(relationalFromEer(categorySample()).diagram)).toEqual([]);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+
+/** Attaches table-level UNIQUE constraints, the way the inspector writes them. */
+function withUniques(t: TableNode, groups: string[][]): TableNode {
+  const record = t as unknown as Record<string, unknown>;
+  t.uniqueOrder = [];
+  for (const cols of groups) {
+    const u = makeUnique(cols);
+    record[uniqueKey(u.id)] = u;
+    t.uniqueOrder.push(u.id);
+  }
+  return t;
+}
+
+describe('table-level unique constraints', () => {
+  /** DEPARTMENT(dept_id PK, code, year). */
+  function dept() {
+    const id = pk('dept_id');
+    const code = col('code', { notNull: true });
+    const year = col('year', { notNull: true });
+    return { t: table('department', [id, code, year]), id, code, year };
+  }
+
+  it('accepts a composite candidate key', () => {
+    const { t, code, year } = dept();
+    withUniques(t, [[code.id, year.id]]);
+    expect(errors({ nodes: [t], edges: [] })).toEqual([]);
+    expect(warnings({ nodes: [t], edges: [] })).toEqual([]);
+  });
+
+  it('flags an empty constraint', () => {
+    const { t } = dept();
+    withUniques(t, [[]]);
+    expect(warnings({ nodes: [t], edges: [] }).join(' ')).toMatch(/has no columns in it/);
+  });
+
+  it('flags one that restates the primary key', () => {
+    const { t, id } = dept();
+    withUniques(t, [[id.id]]);
+    expect(warnings({ nodes: [t], edges: [] }).join(' ')).toMatch(/is the primary key again/);
+  });
+
+  it('flags a repeat of another constraint', () => {
+    const { t, code } = dept();
+    withUniques(t, [[code.id], [code.id]]);
+    expect(warnings({ nodes: [t], edges: [] }).join(' ')).toMatch(/repeats UNIQUE \(code\)/);
+  });
+
+  it('flags a nullable column, which several rows can share', () => {
+    const { t, code, year } = dept();
+    code.notNull = false;
+    const record = t as unknown as Record<string, Column>;
+    record[`col:${code.id}`] = code;
+    withUniques(t, [[code.id, year.id]]);
+    expect(warnings({ nodes: [t], edges: [] }).join(' ')).toMatch(/not constrained/);
+  });
+
+  it('forgets a column that was deleted rather than pointing at nothing', () => {
+    const { t, code, year } = dept();
+    withUniques(t, [[code.id, year.id]]);
+    t.columnOrder = t.columnOrder.filter((c) => c !== year.id);
+    expect(errors({ nodes: [t], edges: [] })).toEqual([]);
+  });
+
+  it('lets a composite foreign key reference a composite candidate key', () => {
+    const { t, code, year } = dept();
+    withUniques(t, [[code.id, year.id]]);
+    const a = col('dept_code', { notNull: true });
+    const b = col('dept_year', { notNull: true });
+    const child = table('course', [pk('course_id'), a, b]);
+    const d = { nodes: [t, child], edges: [fk(child, t, [a.id, b.id], [code.id, year.id])] };
+    expect(errors(d)).toEqual([]);
+  });
+
+  it('still refuses a foreign key onto columns that are no candidate key', () => {
+    const { t, code, year } = dept();
+    const a = col('dept_code', { notNull: true });
+    const b = col('dept_year', { notNull: true });
+    const child = table('course', [pk('course_id'), a, b]);
+    const d = { nodes: [t, child], edges: [fk(child, t, [a.id, b.id], [code.id, year.id])] };
+    expect(errors(d).join(' ')).toMatch(/neither a primary key nor unique/);
   });
 });

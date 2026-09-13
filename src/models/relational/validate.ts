@@ -1,5 +1,9 @@
 import type { Issue, Severity } from '../../ecosystem/registry';
-import { readColumn, readColumns, type Diagram, type Id } from './types';
+import { readColumn, readColumns, type Diagram, type Id,
+  primaryKeyOf,
+  readUniques,
+  uniqueColumnNames,
+} from './types';
 
 /**
  * Checks a relational schema is well formed: every relation keyed, every
@@ -68,6 +72,50 @@ export function validate(d: Diagram): Issue[] {
     }
   }
 
+  for (const table of d.nodes) {
+    const pk = primaryKeyOf(table)
+      .map((c) => c.id)
+      .sort()
+      .join(',');
+    const seen = new Map<string, string>();
+    for (const u of readUniques(table)) {
+      const names = uniqueColumnNames(table, u);
+      const where = `on "${table.name}"`;
+      if (u.columns.length === 0) {
+        add('warning', `A unique constraint ${where} has no columns in it.`, [table.id]);
+        continue;
+      }
+      const signature = [...u.columns].sort().join(',');
+      if (signature === pk) {
+        add(
+          'warning',
+          `UNIQUE (${names.join(', ')}) ${where} is the primary key again, so it constrains nothing new.`,
+          [table.id],
+        );
+      }
+      const twin = seen.get(signature);
+      if (twin) {
+        add('warning', `UNIQUE (${names.join(', ')}) ${where} repeats ${twin}.`, [table.id]);
+      } else {
+        seen.set(signature, `UNIQUE (${names.join(', ')})`);
+      }
+      // A nullable column lets several rows sit in the constraint at once,
+      // because in SQL no two NULLs are equal.
+      const nullable = u.columns
+        .map((id) => readColumn(table, id))
+        .filter((c) => c && !c.notNull && !c.pk);
+      if (nullable.length > 0) {
+        add(
+          'warning',
+          `UNIQUE (${names.join(', ')}) ${where} includes nullable ${nullable
+            .map((c) => `"${c!.name}"`)
+            .join(', ')}; rows with a null there are not constrained.`,
+          [table.id],
+        );
+      }
+    }
+  }
+
   for (const e of d.edges) {
     const child = d.nodes.find((n) => n.id === e.source);
     const parent = d.nodes.find((n) => n.id === e.target);
@@ -98,8 +146,14 @@ export function validate(d: Diagram): Issue[] {
       continue;
     }
 
-    // Referencing something that is not unique cannot identify one row.
-    const allKeyed = referenced.every((c) => c?.pk || c?.unique);
+    // Referencing something that is not unique cannot identify one row. A
+    // table-level constraint counts, which is what lets a composite foreign key
+    // point at a composite candidate key.
+    const referencedKey = [...e.references].sort().join(',');
+    const matchesUnique = readUniques(parent).some(
+      (u) => [...u.columns].sort().join(',') === referencedKey,
+    );
+    const allKeyed = matchesUnique || referenced.every((c) => c?.pk || c?.unique);
     if (!allKeyed) {
       add(
         'error',
@@ -107,6 +161,7 @@ export function validate(d: Diagram): Issue[] {
         [e.id],
       );
     } else if (
+      !matchesUnique &&
       referenced.every((c) => c?.pk) &&
       referenced.length !== parentKey.length
     ) {

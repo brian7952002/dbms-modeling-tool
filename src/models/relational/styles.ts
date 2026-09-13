@@ -36,6 +36,7 @@ export function diagramCss(theme: 'light' | 'dark'): string {
   fill: var(--type);
 }
 .eer-svg .column-empty { font-size: 11.5px; fill: var(--muted); font-style: italic; }
+.eer-svg .constraint-line { font-size: 10.5px; font-weight: 600; fill: var(--muted); letter-spacing: 0.2px; }
 .eer-svg .pk-underline { stroke: var(--ink); stroke-width: 1.3; }
 
 .eer-svg .edge-line { fill: none; stroke: var(--line); stroke-width: 1.6; }
