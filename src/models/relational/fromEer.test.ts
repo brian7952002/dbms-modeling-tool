@@ -204,3 +204,70 @@ describe('a weak entity whose owner may only have one', () => {
     expect(validate(diagram).filter((i) => i.severity === 'error')).toEqual([]);
   });
 });
+
+/* -------------------------------------------------------------------------- */
+
+describe('alternate keys', () => {
+  /** DEPARTMENT with PK dept_id and a second candidate key {code, year}. */
+  function dept(altKeys: string[][]) {
+    const attr = (id: string, name: string, type: string) => ({
+      id,
+      kind: 'attribute' as const,
+      name,
+      x: 0,
+      y: 0,
+      w: 120,
+      h: 48,
+      key: id === 'a_pk',
+      partialKey: false,
+      multivalued: false,
+      derived: false,
+      dataType: type,
+      nullable: false,
+    });
+    const hangs = (id: string) => ({
+      id: `x${id}`,
+      kind: 'attribute' as const,
+      source: id,
+      target: 'D',
+    });
+    return {
+      nodes: [
+        { id: 'D', kind: 'entity' as const, name: 'Department', x: 0, y: 0, w: 140, h: 60, weak: false, altKeys },
+        attr('a_pk', 'dept_id', 'INTEGER'),
+        attr('a_code', 'code', 'VARCHAR(10)'),
+        attr('a_year', 'year', 'INTEGER'),
+      ],
+      edges: [hangs('a_pk'), hangs('a_code'), hangs('a_year')],
+    };
+  }
+
+  it('emits one UNIQUE constraint per group', () => {
+    const { sql } = eerDdl(dept([['a_code', 'a_year']]) as never, 'Uni');
+    expect(sql).toMatch(/UNIQUE \(code, year\)/);
+  });
+
+  it('emits a separate constraint for each of two groups', () => {
+    const { sql } = eerDdl(dept([['a_code'], ['a_year']]) as never, 'Uni');
+    expect(sql).toMatch(/UNIQUE \(code\)/);
+    expect(sql).toMatch(/UNIQUE \(year\)/);
+  });
+
+  it('does not restate the primary key as a UNIQUE', () => {
+    const { sql, notes } = eerDdl(dept([['a_pk']]) as never, 'Uni');
+    expect(sql).not.toMatch(/UNIQUE \(dept_id\)/);
+    expect(notes.some((n) => n.includes('is the primary key'))).toBe(true);
+  });
+
+  it('leaves the schema alone when there are no alternate keys', () => {
+    const { sql } = eerDdl(dept([]) as never, 'Uni');
+    expect(sql).not.toMatch(/UNIQUE/);
+  });
+
+  it('carries a single-column group into the relational diagram', () => {
+    const { diagram } = relationalFromEer(dept([['a_code']]) as never);
+    const table = diagram.nodes.find((n) => n.name === 'department');
+    const code = readColumns(table!).find((c) => c.name === 'code');
+    expect(code?.unique).toBe(true);
+  });
+});

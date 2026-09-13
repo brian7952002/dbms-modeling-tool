@@ -168,6 +168,12 @@ function NodeShapeImpl({
     );
   }
 
+  // IDEF1X-style alternate-key markers, worked out by the model.
+  const altKeys = (decoration?.altKeys as number[] | undefined) ?? [];
+  const akLabel = altKeys.length > 0 ? altKeys.map((n) => `AK${n}`).join(' ') : null;
+  // The name shifts up to make room, so the marker never sits on the underline.
+  if (akLabel) labelDy = -6;
+
   const textWidth = measureText(label);
   const underline =
     node.kind === 'attribute' && (node.key || node.partialKey) ? (
@@ -175,8 +181,8 @@ function NodeShapeImpl({
         className={`key-underline${node.partialKey ? ' partial' : ''}`}
         x1={x - textWidth / 2}
         x2={x + textWidth / 2}
-        y1={y + 9}
-        y2={y + 9}
+        y1={y + labelDy + 9}
+        y2={y + labelDy + 9}
       />
     ) : null;
 
@@ -192,6 +198,11 @@ function NodeShapeImpl({
         {label}
       </text>
       {underline}
+      {akLabel && (
+        <text className="alt-key" x={x} y={y + 13} textAnchor="middle" dominantBaseline="central">
+          {akLabel}
+        </text>
+      )}
       {node.kind === 'isa' && (
         <title>
           {node.disjoint ? 'Disjoint' : 'Overlapping'} ·{' '}

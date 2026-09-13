@@ -1,5 +1,6 @@
 import type { AttributeNode, Diagram, Edge, EntityNode, Id } from './types';
 import {
+  alternateKeys,
   attributesOf,
   entities,
   identifyingOwner,
@@ -432,6 +433,39 @@ export function mapToRelational(d: Diagram): RelationalSchema {
   for (const e of entities(d)) {
     const t = entityTable.get(e.id)!;
     emitOwnedAttributes(e.name, e.id, t, pkOf(e));
+  }
+
+  /* ---- Pass 2b: alternate keys ----------------------------------------- */
+
+  // Resolved once every column exists, so a key can name any attribute of the
+  // entity whether or not it is also part of the primary key.
+  for (const e of entities(d)) {
+    const t = entityTable.get(e.id)!;
+    const present = new Set(t.columns.map((c) => c.name));
+    alternateKeys(d, e.id).forEach((group, i) => {
+      const label = `AK${i + 1}`;
+      if (group.length === 0) return; // the checker reports the empty group
+      const cols = group.flatMap((a) => leafColumns(d, a).map((l) => l.column));
+      const missing = cols.filter((c) => !present.has(c));
+      if (missing.length > 0) {
+        // A multivalued attribute lives in its own table, so it cannot take
+        // part in a UNIQUE constraint on this one.
+        warnings.push(
+          `${label} on "${e.name}" names ${missing.join(', ')}, which ${
+            missing.length === 1 ? 'is not a column' : 'are not columns'
+          } of ${t.name}; the UNIQUE constraint was skipped.`,
+        );
+        return;
+      }
+      const key = cols.join(' ');
+      if (t.uniques.some((u) => u.join(' ') === key)) return;
+      if (t.pk.join(' ') === key) {
+        notes.push(`${label} on "${e.name}" is the primary key, so no UNIQUE was added.`);
+        return;
+      }
+      t.uniques.push(cols);
+      notes.push(`${label} on "${e.name}" became UNIQUE (${cols.join(', ')}).`);
+    });
   }
 
   /* ---- Pass 3: relationships ------------------------------------------- */

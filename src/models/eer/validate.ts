@@ -5,6 +5,7 @@ import {
   attributesOf,
   entities,
   identifyingLinks,
+  alternateKeys,
   identifyingOwner,
   type IdentifyingLink,
   isRecursive,
@@ -139,6 +140,62 @@ export function validate(d: Diagram): Issue[] {
     } else if (keys.length === 0 && !subclass && !isCategory) {
       add('error', `Entity "${e.name}" has no key attribute.`, [e.id]);
     }
+  }
+
+  // ---- Alternate keys ----------------------------------------------------
+  for (const e of entities(d)) {
+    const groups = alternateKeys(d, e.id);
+    const pk = keyAttributes(d, e.id)
+      .map((a) => a.id)
+      .sort()
+      .join(',');
+    const seenGroups = new Map<string, number>();
+    groups.forEach((group, i) => {
+      const label = `AK${i + 1}`;
+      if (group.length === 0) {
+        add('warning', `${label} on "${e.name}" has no attributes in it.`, [e.id]);
+        return;
+      }
+      const signature = group.map((a) => a.id).sort().join(',');
+      if (signature === pk) {
+        add(
+          'warning',
+          `${label} on "${e.name}" is the primary key again, not a separate candidate key.`,
+          [e.id],
+        );
+      }
+      const twin = seenGroups.get(signature);
+      if (twin !== undefined) {
+        add(
+          'warning',
+          `${label} on "${e.name}" repeats AK${twin + 1}.`,
+          [e.id],
+        );
+      } else {
+        seenGroups.set(signature, i);
+      }
+      // A candidate key that can be null does not identify anything.
+      const nullable = group.filter((a) => a.nullable && !a.key);
+      if (nullable.length > 0) {
+        add(
+          'warning',
+          `${label} on "${e.name}" includes nullable ${nullable
+            .map((a) => `"${a.name}"`)
+            .join(', ')}; a candidate key cannot be null.`,
+          [e.id, ...nullable.map((a) => a.id)],
+        );
+      }
+      const multivalued = group.filter((a) => a.multivalued);
+      if (multivalued.length > 0) {
+        add(
+          'error',
+          `${label} on "${e.name}" includes multivalued ${multivalued
+            .map((a) => `"${a.name}"`)
+            .join(', ')}, which is stored in its own table and cannot be part of this key.`,
+          [e.id, ...multivalued.map((a) => a.id)],
+        );
+      }
+    });
   }
 
   // ---- Relationships -----------------------------------------------------

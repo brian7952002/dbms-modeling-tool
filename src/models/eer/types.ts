@@ -18,6 +18,15 @@ export interface EntityNode extends NodeBase {
   kind: 'entity';
   /** Weak entity types are drawn with a double border. */
   weak: boolean;
+  /**
+   * Candidate keys other than the primary one, each a set of this entity's own
+   * attributes. Chen notation can underline only one key, so a second or third
+   * candidate key has nowhere to go; these carry it, are drawn as IDEF1X-style
+   * AK1/AK2 markers, and become a UNIQUE constraint apiece in the SQL.
+   *
+   * Attribute ids rather than names, so renaming an attribute keeps the key.
+   */
+  altKeys?: Id[][];
 }
 
 export interface RelationshipNode extends NodeBase {

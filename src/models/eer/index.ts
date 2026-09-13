@@ -13,6 +13,7 @@ import { Inspector } from './Inspector';
 import { Help } from './Help';
 import { PALETTE } from './palette';
 import { eerOutline } from './outline';
+import { alternateKeys, entities } from './graph';
 import { relationalFromEer } from '../relational/fromEer';
 
 /**
@@ -54,6 +55,17 @@ function decorate(diagram: Diagram): Decorations {
         edges.set(e.id, { ...(edges.get(e.id) ?? {}), double: true });
       }
     }
+  }
+
+  // Which alternate keys an attribute belongs to is a fact about its entity,
+  // so it is resolved here once rather than by each oval.
+  for (const e of entities(diagram)) {
+    alternateKeys(diagram, e.id).forEach((group, i) => {
+      for (const a of group) {
+        const prev = (nodes.get(a.id)?.altKeys as number[] | undefined) ?? [];
+        nodes.set(a.id, { ...(nodes.get(a.id) ?? {}), altKeys: [...prev, i + 1] });
+      }
+    });
   }
 
   return { nodes, edges };

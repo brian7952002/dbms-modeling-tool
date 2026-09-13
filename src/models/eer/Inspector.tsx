@@ -345,6 +345,11 @@ export function Inspector({
             addLabel="Add attribute"
             onTidy={() => onTidyAttributes([node.id])}
           />
+          <AltKeys
+            groups={node.altKeys ?? []}
+            attributes={owned.map((a) => ({ id: a.id, name: a.name }))}
+            onChange={(next) => patchNode(node.id, { altKeys: next })}
+          />
           <SubList
             title="Specialisation"
             empty="Not part of any ISA hierarchy."
@@ -596,6 +601,72 @@ export function Inspector({
         Delete {node.kind}
       </button>
     </div>
+  );
+}
+
+function AltKeys({
+  groups,
+  attributes,
+  onChange,
+}: {
+  groups: Id[][];
+  attributes: { id: Id; name: string }[];
+  onChange: (next: Id[][]) => void;
+}) {
+  const toggle = (index: number, attrId: Id) => {
+    const group = groups[index] ?? [];
+    // Kept in the entity's own attribute order, so the column order in the
+    // generated UNIQUE constraint does not depend on click order.
+    const next = group.includes(attrId)
+      ? group.filter((id) => id !== attrId)
+      : attributes.filter((a) => a.id === attrId || group.includes(a.id)).map((a) => a.id);
+    onChange(groups.map((g, i) => (i === index ? next : g)));
+  };
+
+  return (
+    <section className="sublist">
+      <h3>Alternate keys</h3>
+      {attributes.length === 0 ? (
+        <p className="panel-hint">Give the entity some attributes first.</p>
+      ) : (
+        <>
+          <p className="panel-hint">
+            Candidate keys besides the primary one. Each becomes its own UNIQUE
+            constraint, and its attributes are marked AK1, AK2 … on the diagram.
+          </p>
+          {groups.map((group, i) => (
+            <div className="alt-key-group" key={i}>
+              <div className="alt-key-head">
+                <strong>AK{i + 1}</strong>
+                <button
+                  type="button"
+                  className="subtle"
+                  onClick={() => onChange(groups.filter((_, j) => j !== i))}
+                >
+                  Remove
+                </button>
+              </div>
+              <div className="chips">
+                {attributes.map((a) => (
+                  <button
+                    key={a.id}
+                    type="button"
+                    className={`chip${group.includes(a.id) ? ' on' : ''}`}
+                    aria-pressed={group.includes(a.id)}
+                    onClick={() => toggle(i, a.id)}
+                  >
+                    {a.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+          <button type="button" className="subtle" onClick={() => onChange([...groups, []])}>
+            + Add alternate key
+          </button>
+        </>
+      )}
+    </section>
   );
 }
 

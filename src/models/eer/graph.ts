@@ -55,6 +55,22 @@ export function leafColumns(
   return [{ attr, column: name }];
 }
 
+/**
+ * An entity's alternate keys, resolved to attributes.
+ *
+ * Ids that no longer name one of the entity's own attributes are dropped, so
+ * deleting an attribute can never leave a key pointing at nothing — the group
+ * simply shrinks, and an emptied one is reported by the checker.
+ */
+export function alternateKeys(d: Diagram, entityId: Id): AttributeNode[][] {
+  const node = nodeById(d, entityId);
+  if (!node || node.kind !== 'entity' || !node.altKeys) return [];
+  const own = new Map(attributesOf(d, entityId).map((a) => [a.id, a]));
+  return node.altKeys.map((group) =>
+    group.map((id) => own.get(id)).filter((a): a is AttributeNode => !!a),
+  );
+}
+
 export function keyAttributes(d: Diagram, ownerId: Id): AttributeNode[] {
   return attributesOf(d, ownerId).filter((a) => a.key);
 }

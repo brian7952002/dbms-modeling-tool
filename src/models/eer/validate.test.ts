@@ -745,3 +745,65 @@ describe('the checker itself', () => {
     expect(errors(categorySample())).toEqual([]);
   });
 });
+
+/* -------------------------------------------------------------------------- */
+
+describe('alternate keys', () => {
+  /** DEPARTMENT, PK dept_id, plus attributes for a second candidate key. */
+  function dept() {
+    const s = scene();
+    const e = s.entity('Department');
+    const pk = s.attr(e, 'dept_id', { key: true, nullable: false });
+    const code = s.attr(e, 'code', { nullable: false });
+    const year = s.attr(e, 'year', { nullable: false });
+    return { s, e, pk, code, year };
+  }
+
+  it('accepts a second candidate key', () => {
+    const { s, e, code, year } = dept();
+    e.altKeys = [[code.id, year.id]];
+    expect(validate(s.diagram())).toEqual([]);
+  });
+
+  it('flags an empty group', () => {
+    const { s, e } = dept();
+    e.altKeys = [[]];
+    expect(saying(warnings(s.diagram()), 'has no attributes in it')).toBe(true);
+  });
+
+  it('flags one that just repeats the primary key', () => {
+    const { s, e, pk } = dept();
+    e.altKeys = [[pk.id]];
+    expect(saying(warnings(s.diagram()), 'is the primary key again')).toBe(true);
+  });
+
+  it('flags two identical groups', () => {
+    const { s, e, code } = dept();
+    e.altKeys = [[code.id], [code.id]];
+    expect(saying(warnings(s.diagram()), 'repeats AK1')).toBe(true);
+  });
+
+  it('flags a nullable member, which cannot identify anything', () => {
+    const { s, e, code } = dept();
+    code.nullable = true;
+    e.altKeys = [[code.id]];
+    expect(saying(warnings(s.diagram()), 'a candidate key cannot be null')).toBe(true);
+  });
+
+  it('rejects a multivalued member, which lives in another table', () => {
+    const { s, e, code } = dept();
+    code.multivalued = true;
+    e.altKeys = [[code.id]];
+    expect(saying(errors(s.diagram()), 'cannot be part of this key')).toBe(true);
+  });
+
+  it('forgets an attribute that was deleted rather than pointing at nothing', () => {
+    const { s, e, code, year } = dept();
+    e.altKeys = [[code.id, year.id]];
+    const d = s.diagram();
+    d.nodes = d.nodes.filter((n) => n.id !== year.id);
+    d.edges = d.edges.filter((x) => x.source !== year.id);
+    // The group shrinks to the surviving attribute; no dangling-id complaint.
+    expect(validate(d)).toEqual([]);
+  });
+});

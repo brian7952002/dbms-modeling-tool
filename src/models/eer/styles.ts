@@ -93,6 +93,7 @@ export function diagramCss(theme: Theme): string {
 .eer-svg .n-note.selected .brace { stroke: var(--accent); }
 .eer-svg .key-underline { stroke: var(--ink); stroke-width: 1.4; }
 .eer-svg .key-underline.partial { stroke-dasharray: 3 2.5; }
+.eer-svg .alt-key { font-size: 9px; font-weight: 700; fill: var(--muted); letter-spacing: 0.3px; }
 
 .eer-svg .edge-line { fill: none; stroke: var(--line); stroke-width: 1.8; }
 .eer-svg .edge-line.faint { stroke-width: 1.4; }
