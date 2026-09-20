@@ -50,6 +50,17 @@ export interface AttributeNode extends NodeBase {
   nullable: boolean;
   /** Formula shown for derived attributes, e.g. "age = today - dob". */
   derivation?: string;
+  /**
+   * Whether the formula is drawn beside the oval.
+   *
+   * Undefined means yes. A derivation gets written down in order to be read,
+   * so showing it is the default and hiding it is the exception — for when the
+   * canvas is crowded, or the formula is noise in the conversation you are
+   * currently having about the diagram.
+   */
+  showDerivation?: boolean;
+  /** Which side of the oval the flyout sits on, for when it lands on something. */
+  derivationSide?: 'left' | 'right';
 }
 
 export interface IsaNode extends NodeBase {

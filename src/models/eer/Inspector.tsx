@@ -452,13 +452,34 @@ export function Inspector({
           </div>
 
           {node.derived && (
-            <Field label="Derivation">
-              <input
-                value={node.derivation ?? ''}
-                placeholder="e.g. today - birth_date"
-                onChange={(e) => patchNode(node.id, { derivation: e.target.value })}
+            <>
+              <Field label="Derivation">
+                <input
+                  value={node.derivation ?? ''}
+                  placeholder="e.g. today - birth_date"
+                  onChange={(e) => patchNode(node.id, { derivation: e.target.value })}
+                />
+              </Field>
+              <Check
+                label="Show on diagram"
+                checked={node.showDerivation !== false}
+                onChange={(v) => patchNode(node.id, { showDerivation: v })}
+                hint="Draws the formula in a flyout beside the oval."
               />
-            </Field>
+              {node.showDerivation !== false && node.derivation?.trim() && (
+                <Field label="Flyout side" hint="Move it across if it lands on another shape.">
+                  <select
+                    value={node.derivationSide ?? 'right'}
+                    onChange={(e) =>
+                      patchNode(node.id, { derivationSide: e.target.value as 'left' | 'right' })
+                    }
+                  >
+                    <option value="right">Right of the oval</option>
+                    <option value="left">Left of the oval</option>
+                  </select>
+                </Field>
+              )}
+            </>
           )}
 
           <Field label="SQL type">

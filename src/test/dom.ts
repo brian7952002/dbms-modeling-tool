@@ -63,11 +63,7 @@ export function installPointerEvents() {
     (globalThis as unknown as Record<string, unknown>).DragEvent = TestDragEvent;
   }
 
-  // jsdom has no canvas backend and logs a failure the first time one is asked
-  // for. Answering `null` outright silences that and, more usefully, pins text
-  // measurement to `measure.ts`'s deterministic fallback, so shape geometry in
-  // assertions does not depend on whether a font happens to be installed.
-  HTMLCanvasElement.prototype.getContext = () => null;
+  pinTextMeasurement();
 
   if (!Element.prototype.setPointerCapture) {
     Element.prototype.setPointerCapture = function (pointerId: number) {
@@ -82,4 +78,16 @@ export function installPointerEvents() {
       return captured.get(this)?.has(pointerId) ?? false;
     };
   }
+}
+
+/**
+ * Pins text measurement to the deterministic fallback in `measure.ts`.
+ *
+ * jsdom has no canvas backend and logs a failure the first time one is asked
+ * for. Answering `null` outright silences that and, more usefully, keeps any
+ * assertion about shape geometry or text wrapping independent of whether a
+ * font happens to be installed on the machine running the tests.
+ */
+export function pinTextMeasurement() {
+  HTMLCanvasElement.prototype.getContext = () => null;
 }

@@ -91,6 +91,25 @@ export function diagramCss(theme: Theme): string {
 .eer-svg .n-note .note-text { font-size: 12.5px; font-weight: 500; fill: var(--ink); }
 .eer-svg .n-note .note-text.placeholder { fill: var(--muted); font-style: italic; }
 .eer-svg .n-note.selected .brace { stroke: var(--accent); }
+.eer-svg .derivation-leader {
+  stroke: var(--attr-line);
+  stroke-width: 1.2;
+  stroke-dasharray: 3 3;
+}
+.eer-svg .derivation-box {
+  fill: var(--attr-fill);
+  stroke: var(--attr-line);
+  stroke-width: 1.2;
+  /* Dashed, like the oval it belongs to: both say "not stored". */
+  stroke-dasharray: 4 3;
+}
+.eer-svg .derivation-text {
+  font-size: 11.5px;
+  font-weight: 500;
+  fill: var(--ink);
+  dominant-baseline: central;
+}
+.eer-svg .n-attribute.selected .derivation-box { stroke: var(--accent); }
 .eer-svg .key-underline { stroke: var(--ink); stroke-width: 1.4; }
 .eer-svg .key-underline.partial { stroke-dasharray: 3 2.5; }
 .eer-svg .alt-key { font-size: 9px; font-weight: 700; fill: var(--muted); letter-spacing: 0.3px; }

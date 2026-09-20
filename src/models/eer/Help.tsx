@@ -20,6 +20,7 @@ const NOTATION: [string, string][] = [
   ['Oval', 'Attribute. Double oval = multivalued, dashed = derived.'],
   ['Underlined attribute', 'Key attribute. A dashed underline is a partial key (weak-entity discriminator).'],
   ['Attribute on an attribute', 'Composite attribute — the components hang off the parent oval.'],
+  ['Dashed box beside an oval', 'The derivation of a derived attribute — how it is computed rather than stored. Write it in the inspector; untick “Show on diagram” to keep the formula recorded but off the canvas.'],
   ['AK1, AK2 under an attribute', 'Alternate (candidate) key. Chen notation can underline only one key, so a second or third is marked this way and becomes its own UNIQUE constraint in the SQL.'],
   ['Brace with text', 'A note explaining part of the design. Double-click to type; drag the corner handle to stretch the brace over what it refers to. Notes carry no meaning for the schema.'],
   ['Double line', 'Total participation: every instance must take part.'],

@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import type { NodeShapeProps } from '../../ecosystem/registry';
-import type { DiagramNode } from './types';
+import type { AttributeNode, DiagramNode } from './types';
 import { measureText, wrapText } from '../../platform/measure';
 
 type Props = NodeShapeProps<DiagramNode>;
@@ -15,6 +15,62 @@ function trianglePoints(x: number, y: number, w: number, h: number) {
   const hw = w / 2;
   const hh = h / 2;
   return `${x},${y - hh} ${x + hw},${y + hh} ${x - hw},${y + hh}`;
+}
+
+/**
+ * The flyout carrying a derived attribute's formula.
+ *
+ * It is drawn inside the attribute's own group, which gets three things for
+ * free: it travels with the shape, it can be grabbed to drag it, and it lands
+ * in the SVG export like any other part of the diagram. It deliberately does
+ * not change the node's width or height — edges attach to the oval's outline,
+ * and a flyout that moved the attachment points would drag every connected
+ * line around with it.
+ */
+const DERIVATION_FONT = '500 11.5px "Segoe UI", system-ui, -apple-system, sans-serif';
+const DERIVATION_MAX_WIDTH = 180;
+const DERIVATION_PAD_X = 9;
+const DERIVATION_PAD_Y = 5;
+const DERIVATION_LINE = 15;
+/** Length of the leader line between the oval and the box. */
+const DERIVATION_GAP = 16;
+
+function derivationFlyout(node: AttributeNode): React.ReactNode {
+  const formula = node.derivation?.trim();
+  if (!node.derived || !formula || node.showDerivation === false) return null;
+
+  const lines = wrapText(formula, DERIVATION_MAX_WIDTH, DERIVATION_FONT);
+  const textWidth = lines.reduce((m, l) => Math.max(m, measureText(l, DERIVATION_FONT)), 0);
+  const boxW = Math.round(textWidth) + DERIVATION_PAD_X * 2;
+  const boxH = lines.length * DERIVATION_LINE + DERIVATION_PAD_Y * 2;
+
+  const onLeft = node.derivationSide === 'left';
+  const anchor = onLeft ? node.x - node.w / 2 : node.x + node.w / 2;
+  const boxX = onLeft ? anchor - DERIVATION_GAP - boxW : anchor + DERIVATION_GAP;
+  const boxY = node.y - boxH / 2;
+  const textX = boxX + DERIVATION_PAD_X;
+  // `dominant-baseline: central` puts y at the middle of each line.
+  const firstLineY = boxY + DERIVATION_PAD_Y + DERIVATION_LINE / 2;
+
+  return (
+    <g className="derivation">
+      <line
+        className="derivation-leader"
+        x1={anchor}
+        y1={node.y}
+        x2={onLeft ? boxX + boxW : boxX}
+        y2={node.y}
+      />
+      <rect className="derivation-box" x={boxX} y={boxY} width={boxW} height={boxH} rx={4} />
+      <text className="derivation-text" x={textX} y={firstLineY}>
+        {lines.map((line, i) => (
+          <tspan key={i} x={textX} dy={i === 0 ? 0 : DERIVATION_LINE}>
+            {line || ' '}
+          </tspan>
+        ))}
+      </text>
+    </g>
+  );
 }
 
 /** How much of a note's width the brace takes, and how deep its tip pokes. */
@@ -198,6 +254,7 @@ function NodeShapeImpl({
         {label}
       </text>
       {underline}
+      {node.kind === 'attribute' && derivationFlyout(node)}
       {akLabel && (
         <text className="alt-key" x={x} y={y + 13} textAnchor="middle" dominantBaseline="central">
           {akLabel}
