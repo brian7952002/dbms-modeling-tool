@@ -457,9 +457,9 @@ export function mapToRelational(d: Diagram): RelationalSchema {
         );
         return;
       }
-      const key = cols.join(' ');
-      if (t.uniques.some((u) => u.join(' ') === key)) return;
-      if (t.pk.join(' ') === key) {
+      const key = cols.join('\0');
+      if (t.uniques.some((u) => u.join('\0') === key)) return;
+      if (t.pk.join('\0') === key) {
         notes.push(`${label} on "${e.name}" is the primary key, so no UNIQUE was added.`);
         return;
       }
