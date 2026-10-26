@@ -1,30 +1,30 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Modal } from '../platform/Modal';
-import { useAuth } from '../cloud/auth';
 import {
-  createDiagram,
   deleteDiagram,
+  duplicateDiagram,
+  exportAll,
+  importBundle,
+  isAvailable,
   listDiagrams,
-  moveToProject,
-  openDiagram,
+  loadDiagram,
   renameDiagram,
-  setPublished,
-  shareLinkFor,
-  type CloudDiagram,
-} from '../cloud/diagrams';
-import { canEdit, type Project } from '../cloud/projects';
+  saveDiagram,
+  type LocalDiagram,
+} from '../local/library';
+import { canImportFromCloud, importFromCloud } from '../local/importFromCloud';
+import { downloadBlob, fromFile, slugify, toFile } from '../platform/serialize';
 import type { Diagram } from '../platform/types';
 
 interface Props {
   onClose: () => void;
   diagram: Diagram;
   title: string;
+  model: string;
+  /** The library entry currently open on the canvas, if any. */
   currentId: string | null;
-  projects: Project[];
-  activeProject: Project | null;
-  onChangeProject: (project: Project | null) => void;
-  onOpened: (meta: CloudDiagram, diagram: Diagram, title: string) => void;
-  onSaved: (meta: CloudDiagram) => void;
+  onOpened: (meta: LocalDiagram, diagram: Diagram, title: string, model: string) => void;
+  onSaved: (meta: LocalDiagram) => void;
   notify: (message: string) => void;
 }
 
@@ -37,43 +37,40 @@ const when = (iso: string) => {
   return d.toLocaleDateString();
 };
 
+const MODEL_LABEL: Record<string, string> = {
+  eer: 'EER',
+  instance: 'Instance data',
+  relational: 'Relational',
+  physical: 'Physical',
+};
+
 export function LibraryModal({
   onClose,
   diagram,
   title,
+  model,
   currentId,
-  projects,
-  activeProject,
-  onChangeProject,
   onOpened,
   onSaved,
   notify,
 }: Props) {
-  const auth = useAuth();
-  const [items, setItems] = useState<CloudDiagram[] | null>(null);
+  const [items, setItems] = useState<LocalDiagram[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const importInput = useRef<HTMLInputElement | null>(null);
 
   const refresh = useCallback(async () => {
     try {
       setItems(await listDiagrams());
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not load your diagrams.');
+      setError(err instanceof Error ? err.message : 'Could not read your diagrams.');
     }
   }, []);
 
   useEffect(() => {
-    if (auth.user) void refresh();
-  }, [auth.user, refresh]);
-
-  if (!auth.user) {
-    return (
-      <Modal title="Diagrams" onClose={onClose}>
-        <p>Sign in to keep diagrams in your account and open them from any device.</p>
-      </Modal>
-    );
-  }
+    void refresh();
+  }, [refresh]);
 
   const guard = async (fn: () => Promise<void>) => {
     setBusy(true);
@@ -87,217 +84,248 @@ export function LibraryModal({
     }
   };
 
-  const scopeId = activeProject?.id ?? null;
-  const visible = (items ?? []).filter((d) => (d.projectId ?? null) === scopeId);
-  // Viewers see the project but may not change anything in it.
-  const mayWrite = activeProject ? canEdit(activeProject.role) : true;
+  if (!isAvailable()) {
+    return (
+      <Modal title="My diagrams" onClose={onClose}>
+        <p>
+          This browser will not let the app keep diagrams — usually a private window, or site data
+          blocked for this address.
+        </p>
+        <p className="panel-hint">
+          Everything else still works. Use <strong>File ▸ Save .eer.json</strong> to keep your work
+          as a file, and <strong>Open .eer.json</strong> to bring it back.
+        </p>
+      </Modal>
+    );
+  }
+
+  const list = items ?? [];
 
   return (
     <Modal
-      title={activeProject ? `Diagrams — ${activeProject.name}` : 'My diagrams'}
+      title="My diagrams"
       onClose={onClose}
       wide
       footer={
         <>
           <span className="panel-hint">
-            {items ? `${visible.length} here · signed in as ${auth.user.email}` : 'Loading…'}
+            {items ? `${list.length} saved in this browser` : 'Loading…'}
           </span>
           <button
             type="button"
             className="primary"
-            disabled={busy || !mayWrite}
-            title={mayWrite ? undefined : 'You have view-only access to this project.'}
+            disabled={busy}
             onClick={() =>
               guard(async () => {
-                const meta = await createDiagram(auth.user!.id, diagram, title, scopeId);
+                const meta = await saveDiagram(currentId, toFile(diagram, title, model));
                 onSaved(meta);
                 await refresh();
-                notify(
-                  activeProject
-                    ? `Saved “${meta.title}” into ${activeProject.name}.`
-                    : `Saved “${meta.title}” to your account.`,
-                );
+                notify(`Saved “${meta.title}”.`);
               })
             }
           >
-            Save current here
+            {currentId ? 'Save changes' : 'Save current diagram'}
           </button>
         </>
       }
     >
       {error && <p className="auth-error">{error}</p>}
 
-      <label className="field scope-picker">
-        <span className="field-label">Showing</span>
-        <select
-          value={scopeId ?? ''}
-          onChange={(e) =>
-            onChangeProject(projects.find((p) => p.id === e.target.value) ?? null)
-          }
-        >
-          <option value="">My diagrams (private)</option>
-          {projects.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name} — you are {p.role}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      {items && visible.length === 0 && (
+      {items && list.length === 0 && (
         <p className="panel-hint">
-          {activeProject
-            ? 'This project has no diagrams yet. Use “Save current here” to add the one on your canvas.'
-            : 'Nothing saved yet. Use “Save current here” to put the diagram on your canvas into your account.'}
+          Nothing saved yet. Use “Save current diagram” to put the one on your canvas here.
         </p>
       )}
 
-      {visible.length > 0 && (
+      {list.length > 0 && (
         <ul className="library">
-          {visible.map((item) => {
-            const mine = item.projectId === null;
-            return (
-              <li key={item.id} className={item.id === currentId ? 'current' : ''}>
-                <div className="library-main">
-                  <strong>{item.title}</strong>
-                  <span className="panel-hint">
-                    v{item.version} · edited {when(item.updatedAt)}
-                    {item.id === currentId ? ' · open now' : ''}
-                    {item.isPublic ? ' · published' : ''}
-                  </span>
-                </div>
-                <div className="library-actions">
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() =>
-                      guard(async () => {
-                        const loaded = await openDiagram(item.id);
-                        onOpened(loaded.meta, loaded.diagram, loaded.title);
-                        onClose();
-                      })
-                    }
-                  >
-                    Open
-                  </button>
+          {list.map((item) => (
+            <li key={item.id} className={item.id === currentId ? 'current' : ''}>
+              <div className="library-main">
+                <strong>{item.title}</strong>
+                <span className="panel-hint">
+                  {MODEL_LABEL[item.model] ?? item.model} · edited {when(item.updatedAt)}
+                  {item.id === currentId ? ' · open now' : ''}
+                </span>
+              </div>
+              <div className="library-actions">
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() =>
+                    guard(async () => {
+                      const stored = await loadDiagram(item.id);
+                      if (!stored) throw new Error('That diagram is no longer here.');
+                      const parsed = fromFile(stored.file);
+                      onOpened(item, parsed.diagram, parsed.title, parsed.model);
+                      onClose();
+                    })
+                  }
+                >
+                  Open
+                </button>
 
-                  {mayWrite && (
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() =>
-                        guard(async () => {
-                          const next = window.prompt('Rename diagram', item.title);
-                          if (!next?.trim()) return;
-                          await renameDiagram(item.id, next.trim());
-                          await refresh();
-                        })
-                      }
-                    >
-                      Rename
-                    </button>
-                  )}
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() =>
+                    guard(async () => {
+                      const next = window.prompt('Rename diagram', item.title);
+                      if (!next?.trim()) return;
+                      const meta = await renameDiagram(item.id, next.trim());
+                      if (item.id === currentId) onSaved(meta);
+                      await refresh();
+                    })
+                  }
+                >
+                  Rename
+                </button>
 
-                  {mayWrite && projects.length > 0 && mine && (
-                    <select
-                      value=""
-                      disabled={busy}
-                      title="Move this diagram into a project"
-                      onChange={(e) =>
-                        guard(async () => {
-                          if (!e.target.value) return;
-                          await moveToProject(item.id, e.target.value);
-                          await refresh();
-                          notify('Moved into the project.');
-                        })
-                      }
-                    >
-                      <option value="">Move to…</option>
-                      {projects
-                        .filter((p) => canEdit(p.role))
-                        .map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.name}
-                          </option>
-                        ))}
-                    </select>
-                  )}
+                <button
+                  type="button"
+                  disabled={busy}
+                  title="Make a separate copy to experiment on"
+                  onClick={() =>
+                    guard(async () => {
+                      await duplicateDiagram(item.id);
+                      await refresh();
+                      notify('Duplicated.');
+                    })
+                  }
+                >
+                  Duplicate
+                </button>
 
-                  {mayWrite && !mine && (
-                    <button
-                      type="button"
-                      disabled={busy}
-                      title="Move back to your private diagrams"
-                      onClick={() =>
-                        guard(async () => {
-                          await moveToProject(item.id, null);
-                          await refresh();
-                          notify('Moved to your private diagrams.');
-                        })
-                      }
-                    >
-                      Make private
-                    </button>
-                  )}
+                <button
+                  type="button"
+                  disabled={busy}
+                  title="Save this diagram as a file on your computer"
+                  onClick={() =>
+                    guard(async () => {
+                      const stored = await loadDiagram(item.id);
+                      if (!stored) throw new Error('That diagram is no longer here.');
+                      downloadBlob(
+                        new Blob([JSON.stringify(stored.file, null, 2)], {
+                          type: 'application/json',
+                        }),
+                        `${slugify(item.title)}.eer.json`,
+                      );
+                    })
+                  }
+                >
+                  Export
+                </button>
 
-                  {mayWrite && (
-                    <button
-                      type="button"
-                      disabled={busy}
-                      title={
-                        item.isPublic
-                          ? 'Anyone with the link can open a read-only copy'
-                          : 'Publish a read-only link'
-                      }
-                      onClick={() =>
-                        guard(async () => {
-                          await setPublished(item.id, !item.isPublic);
-                          await refresh();
-                          if (!item.isPublic) {
-                            await navigator.clipboard
-                              .writeText(shareLinkFor(item.id))
-                              .catch(() => undefined);
-                            notify('Published — share link copied to the clipboard.');
-                          } else {
-                            notify('Unpublished. The old link no longer opens it.');
-                          }
-                        })
-                      }
-                    >
-                      {item.isPublic ? 'Unpublish' : 'Publish link'}
-                    </button>
-                  )}
-
-                  {mayWrite && (
-                    <button
-                      type="button"
-                      className="danger"
-                      disabled={busy}
-                      onClick={() =>
-                        guard(async () => {
-                          if (!window.confirm(`Delete “${item.title}” permanently?`)) return;
-                          await deleteDiagram(item.id);
-                          await refresh();
-                          notify(`Deleted “${item.title}”.`);
-                        })
-                      }
-                    >
-                      Delete
-                    </button>
-                  )}
-                </div>
-              </li>
-            );
-          })}
+                <button
+                  type="button"
+                  className="danger"
+                  disabled={busy}
+                  onClick={() =>
+                    guard(async () => {
+                      const sure = window.confirm(
+                        `Delete “${item.title}”? This cannot be undone, and it is only stored in this browser.`,
+                      );
+                      if (!sure) return;
+                      await deleteDiagram(item.id);
+                      await refresh();
+                      notify(`Deleted “${item.title}”.`);
+                    })
+                  }
+                >
+                  Delete
+                </button>
+              </div>
+            </li>
+          ))}
         </ul>
       )}
 
-      {activeProject && !mayWrite && (
-        <p className="callout">
-          You have view-only access to {activeProject.name}. You can open and export these diagrams,
-          and save your own copy, but not change them.
-        </p>
+      {canImportFromCloud && (
+        <section className="sublist">
+          <h3>Bring over your old account</h3>
+          <p className="panel-hint">
+            Diagrams you saved before this app went offline-only are still on the old server. This
+            copies them all into this browser once, after which the account is finished with.
+          </p>
+          <form
+            className="auth-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const form = new FormData(e.currentTarget);
+              void guard(async () => {
+                const result = await importFromCloud(
+                  String(form.get('email') ?? '').trim(),
+                  String(form.get('password') ?? ''),
+                );
+                await refresh();
+                notify(
+                  result.skipped.length > 0
+                    ? `Brought over ${result.imported}. Could not read: ${result.skipped.join(', ')}.`
+                    : `Brought over ${result.imported} diagram${result.imported === 1 ? '' : 's'}.`,
+                );
+              });
+            }}
+          >
+            <label className="field">
+              <span className="field-label">Email</span>
+              <input name="email" type="email" required autoComplete="username" />
+            </label>
+            <label className="field">
+              <span className="field-label">Password</span>
+              <input name="password" type="password" required autoComplete="current-password" />
+            </label>
+            <button type="submit" disabled={busy}>
+              {busy ? 'Bringing them over…' : 'Import my old diagrams'}
+            </button>
+          </form>
+        </section>
       )}
+
+      <section className="sublist">
+        <h3>Backup</h3>
+        <p className="panel-hint">
+          These diagrams live in this browser only. Clearing site data removes them, and they will
+          not appear in another browser or on another machine. A backup file is the way to keep a
+          copy somewhere this app does not control.
+        </p>
+        <div className="library-actions">
+          <button
+            type="button"
+            disabled={busy || list.length === 0}
+            onClick={() =>
+              guard(async () => {
+                const bundle = await exportAll();
+                downloadBlob(
+                  new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' }),
+                  `dbms-diagrams-${new Date().toISOString().slice(0, 10)}.json`,
+                );
+                notify(`Backed up ${bundle.diagrams.length} diagrams.`);
+              })
+            }
+          >
+            Back up all diagrams
+          </button>
+          <button type="button" disabled={busy} onClick={() => importInput.current?.click()}>
+            Restore from a backup
+          </button>
+          <input
+            ref={importInput}
+            type="file"
+            accept="application/json,.json"
+            hidden
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = '';
+              if (!file) return;
+              void guard(async () => {
+                const added = await importBundle(JSON.parse(await file.text()));
+                await refresh();
+                notify(`Restored ${added} diagram${added === 1 ? '' : 's'}.`);
+              });
+            }}
+          />
+        </div>
+      </section>
     </Modal>
   );
 }

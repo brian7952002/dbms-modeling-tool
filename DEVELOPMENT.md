@@ -13,22 +13,19 @@ cleared: it records what exists, what is decided and why, what is broken, and wh
 | --- | --- |
 | Live site | https://brian7952002.github.io/dbms-modeling-tool/ |
 | Repo | https://github.com/brian7952002/dbms-modeling-tool (public) |
-| Supabase project ref | `mftxzxdnkozkfpzwryfe` |
 | Deploy | GitHub Actions → Pages, on push to `main`; tests gate the build |
-| Branch `main` | Working. Real-time CRDT collaboration. |
+| Backend | **None.** Diagrams are kept in the browser. |
 
-**Shipped and verified:** full Chen/Elmasri EER notation, live model checker, SQL generation,
-JSON/SVG/PNG export, share links, accounts, team projects with roles, invite links, version history
-with attribution, activity feed, real-time collaborative editing with cursors and per-user undo.
+**Shipped:** full Chen/Elmasri EER notation, live model checker, SQL generation, JSON/SVG/PNG
+export, self-contained share links, and a local diagram library with backup and restore.
 
 **Ecosystem:** complete. The platform/model seam carries all four tools — EER, instance diagrams,
 the relational schema, and the physical design — and the three stages of the design process chain
 into each other: conceptual → logical → physical.
 
-**The one thing never verified:** two real browsers editing the same diagram at once. Convergence is
-proven by tests and in the runtime; the Supabase Realtime *transport* under real network conditions
-is not. If peers never appear, check Realtime is enabled for the project. This needs two accounts,
-and it is the top item in §8.
+**Accounts and collaboration were removed on 26 October 2026**, along with Supabase. See §4 for
+what replaced them and why. The history is in git if any of it is ever wanted back; the commit to
+start from is the one that removed `src/cloud/`.
 
 ---
 
@@ -37,13 +34,15 @@ and it is the top item in §8.
 ```bash
 npm install
 npm run dev        # http://localhost:5183 (see .claude/launch.json)
-npm test           # vitest — convergence and undo tests for the CRDT
+npm test           # vitest
 npm run build      # typechecks, then builds
 ```
 
-`.env.local` holds `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` (gitignored). The same two
-values are GitHub Actions secrets. With them unset the app builds and runs local-only, with every
-cloud affordance explaining what is missing — keep that property.
+Nothing else is needed: no credentials, no services, no network. The app runs entirely in the
+browser and the build is a folder of static files.
+
+`VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` survive as GitHub Actions secrets for the one-time
+importer described in §4. When that goes, so do they.
 
 ### Gotchas already paid for
 
@@ -53,10 +52,9 @@ cloud affordance explaining what is missing — keep that property.
   change.
 - **Vite does not always pick up a new `.env.local`** if the file appears after the dev server
   starts. Restart the server.
-- The Supabase MCP connector loads at session start. Adding it mid-session does nothing until a new
-  session begins.
-- Long `bash` heredocs sometimes truncate through the tool layer; write a script file and run it
-  instead for anything sizable.
+- Long `bash` heredocs sometimes truncate through the tool layer, and they collapse backslashes
+  even inside a quoted delimiter. Write a script file and run it instead for anything sizable, and
+  build literal escapes from character codes rather than typing them.
 
 ---
 
@@ -109,63 +107,47 @@ Three decisions worth not re-deriving:
 
 ---
 
-## 4. Backend and its invariants
+## 4. Where diagrams are kept
 
-Schema lives in `supabase/schema.sql`, which mirrors what is deployed. Tables: `profiles`,
-`projects`, `project_members`, `project_invites`, `diagrams`, `diagram_versions`, `activity`.
+There is no server. `src/local/library.ts` keeps diagrams in **IndexedDB** on the machine they were
+made on, and that is the whole storage story.
 
-**Security properties that must survive any refactor.** Each was verified by simulating two users in
-SQL; re-run that style of check after touching policies.
+A record holds exactly the `DiagramFile` that "Save .eer.json" writes, so a library entry and a file
+on disk are one format. Exporting is a copy rather than a conversion, and anything you can open you
+can also save out. IndexedDB rather than localStorage because localStorage is a ~5 MB budget shared
+by the whole origin and holds strings only; a library of worked-up diagrams would hit that wall.
 
-1. A signed-in user reads only their own diagrams plus those in projects they belong to.
-2. A viewer cannot write, *including by calling the REST API directly* — enforced by RLS, not UI.
-3. `owner` is revoked from `anon` at column level, so a published diagram exposes content without
-   its author's id.
-4. Invite codes are never selectable; `redeem_invite()` is the only path that reads them.
-5. `diagram_versions` and `activity` have **no INSERT policy at all**. Only `SECURITY DEFINER`
-   functions write them, so history cannot be forged from a browser.
-6. `project_role_of()` answers only for the caller — it must stay executable by `authenticated`
-   because RLS policies run with the caller's privileges, so the guard is in the function body.
+### Two layers of saving, and why both exist
 
-Every `SECURITY DEFINER` function re-checks permission explicitly, because DEFINER bypasses RLS.
-Errors use a `PTxyz` SQLSTATE, which PostgREST returns as HTTP `xyz`.
+1. **The scratch autosave** (`localStorage`, `eer-designer:autosave:v1`) holds whatever is on the
+   canvas, saved 400 ms after any change. It is what makes closing the tab safe before you have
+   decided a diagram is worth keeping.
+2. **The library** holds named diagrams. Once a diagram has been saved to it once, later edits go
+   back to the same entry automatically.
 
-### Account management
+`eer-designer:current:v1` remembers which entry the tab was editing. Without it a reload restores
+the drawing but forgets where it came from, so the status reads "Not saved yet" and every edit after
+that quietly stops reaching the entry it belongs to — which is exactly how work gets lost.
 
-Clicking the account chip opens a panel with the display name, a password change and sign out. The
-display name is what teammates see in history and activity, so it is worth setting.
+### The honest limitation, stated in the interface
 
-Changing a password **re-authenticates first**: the current password is verified with
-`signInWithPassword` before `updateUser` is called. A session alone should not be enough to change
-the password on a machine somebody walked away from.
+Browser storage is not a safe place for the only copy of anything: clearing site data takes it, and
+it does not follow you to another browser or machine. The library says so in as many words, and
+offers **Back up all diagrams** and **Restore from a backup** so there is a way out and a way back.
+An export that cannot be restored is only the appearance of a backup, so both halves are tested.
 
-### Breached-password checking, and why it is client-side
+### Why this replaced the hosted version
 
-**Supabase only rejects leaked passwords on the Pro plan.** This org is on free, so the dashboard
-toggle renders but does nothing — confirmed the hard way: it was switched on, a known-bad password
-was still accepted, and the advisor kept reporting it disabled because it was right.
+The Supabase project paused itself after a week of inactivity — which free projects do — and with it
+went sign-in, and with sign-in went the ability to save. A tool for coursework that can stop
+accepting work because a server went idle is the wrong shape. Nothing here can pause.
 
-`src/cloud/pwned.ts` therefore does the check from the browser against the Have I Been Pwned range
-API, used by both sign-up and password change. It is k-anonymous: only the first five hex characters
-of the password's SHA-1 are sent, and the response covers every hash sharing that prefix, so the
-service cannot tell which was asked about. Verified working — `password123` reports 2.2 million
-breaches, `Password1` 3.4 million, a random passphrase passes.
+### The one-time importer
 
-**It is advisory, not enforcement.** Someone determined could call the auth API directly with the
-publishable key and bypass it. Real enforcement needs the server, which needs Pro. That is an honest
-trade for catching accidental reuse at no cost, and the code says so where someone will read it.
-
-Free-plan password settings that *do* work and are worth turning on, under
-Authentication ▸ Providers ▸ Email: minimum length, and required character classes.
-
-### Outstanding dashboard items (not reachable via the connector)
-
-- Enable leaked-password protection (Authentication ▸ Policies).
-- Confirm **Site URL** and **Redirect URLs** point at the Pages URL, or confirmation emails strand
-  people on a dead page. Note that sign-up *succeeds* either way — verification happens server-side
-  — so a working sign-up does not prove this is configured.
-
----
+`src/local/importFromCloud.ts` is the last thing that talks to a server, and it exists to empty that
+server rather than to use it: sign in once, copy every diagram into this browser, done. **It is
+meant to be deleted**, along with the `@supabase/supabase-js` dependency and the two
+`VITE_SUPABASE_*` build secrets, once the diagrams are across.
 
 ## 5. The modelling ecosystem
 
@@ -320,55 +302,44 @@ one file, a clustering index on a hashed file, a large heap with no index, dupli
 records larger than a block, and — with a relational schema linked — index or key columns the table
 does not have, and a primary key with no fast access path.
 
-## 7. Real-time collaboration
+## 7. The document model
 
-Shipped. Yjs CRDT over Supabase Realtime, with no server component.
+`src/platform/collab/` keeps its name for the sake of git history, but there is no collaboration in
+it any more — only the document the canvas edits.
 
-- `src/platform/collab/doc.ts` — `DiagramDoc`. Nodes and edges are `Y.Map`s keyed by id, and **each node is
-  itself a `Y.Map` of its fields**. That is the whole point: two people editing different fields of
-  one shape both keep their change, where a single blob per node would let the last writer silently
-  discard the other. Per-user undo via `Y.UndoManager` scoped to a local origin.
-- `src/platform/collab/provider.ts` — peers broadcast their own updates and answer each other's
-  `sync-request` with a state-vector diff. Awareness (cursor, selection, name, colour) rides the
-  same channel but never enters the document, so a moving cursor is not an undoable edit.
-- `src/platform/collab/useDiagramDoc.ts` — binds the document to React while **keeping the existing `Action`
-  union**, so `Canvas` and `Inspector` still `dispatch` exactly as before. Preserve this seam: it is
-  what made this migration tractable and what will make the ecosystem refactor tractable.
-- `persist_realtime_diagram()` saves the merged state plus the plain JSON, with no stale-version
-  check — under a CRDT concurrent writes are normal, and the document is already reconciled before
-  it arrives.
+### Why Yjs is still here
 
-### A trap worth remembering
+A `DiagramDoc` wraps a `Y.Doc`: nodes and edges are each a `Y.Map` keyed by id, and every node is
+itself a `Y.Map` of its fields. That was built for concurrent editing and now earns its place for
+two plainer reasons:
 
-This was believed broken for some time. It was not. The **browser test harness** imported `yjs`
-through a hand-written `/node_modules/.vite/deps/yjs.js?v=1` URL, which is a *different module
-instance* from the one Vite gives `doc.ts`. Structs created by one Yjs cannot integrate into a
-document owned by another, and the symptom mimics a CRDT bug closely: the delete set applies, the
-replacement structs do not, so an edited field vanishes on one side only.
+- **`Y.UndoManager` is the undo stack**, with a capture timeout that makes a finished drag one step
+  rather than forty.
+- **It holds the work.** Replacing the document layer would be a large refactor of the one thing
+  that must not lose a diagram, in exchange for dropping a dependency. That is a bad trade, and it
+  stays a bad trade until there is a reason beyond tidiness.
 
-**Never import a dependency by a guessed bundler path.** In the browser console, import only your
-own modules and use what they re-export — `encodeState`/`applyEncodedState` are enough to drive a
-convergence check without touching Yjs directly. Better still, write it as a test.
+`doc.test.ts` still contains merge tests. They exercise the data structure, not a feature: nothing
+in the app merges two documents today. They are kept because they are the proof that per-field
+storage works, and because they are what any future sync would be built on.
+
+### Opening a diagram builds a new document
+
+`reset` in `useDiagramDoc.ts` constructs a fresh `DiagramDoc` rather than emptying the current one.
+This mattered acutely under collaboration — emptying a live document broadcast the deletion to
+everyone else in it — and it still matters: a document's history is what gets saved, so reusing one
+document for every diagram a tab opens means saving all of them, forever.
+
+### What was removed on 26 October 2026
+
+`RealtimeProvider`, awareness and peer cursors, `src/cloud/` entirely, the account and projects and
+history modals, and the Supabase schema. Removed rather than disabled, because dead code that looks
+live is worse than no code: the next person to read it cannot tell what the app actually does.
 
 ### Tests
 
-204 tests across nine files; `npm test` runs them in about three seconds. CI runs them too, before the build in `.github/workflows/deploy.yml`, so a red test stops the deploy rather than shipping past it.
-
-`src/platform/collab/doc.test.ts` covers concurrent rename-plus-move on one shape, conflicting writes
-to one field, a delete racing an edit, dangling-edge cleanup, three-way convergence, and undo
-reverting only its own author's work. Run `npm test` after touching anything in
-`src/platform/collab/`.
-
-`src/platform/Canvas.test.tsx` covers the interaction layer: selection, dragging with its single
-undo step per gesture, grid snapping, marquee, the connect tool, palette drops, inline rename, and
-pan/zoom. It is the only test file needing a DOM, so it opts in with a `// @vitest-environment jsdom`
-docblock rather than slowing the rest down — everything else stays on the default node environment.
-
-`src/test/dom.ts` holds the shims jsdom is missing: `PointerEvent`, `DragEvent`, and pointer capture.
-It deliberately does **not** stub `getBoundingClientRect` — jsdom's all-zero rect puts the origin at
-zero, so with an unscaled viewport client coordinates *are* diagram coordinates and the arithmetic
-under test stays readable in the assertions. It does stub `getContext` to `null`, which pins text
-measurement to the fallback in `measure.ts` so shape geometry never depends on installed fonts.
+292 tests across 15 files; `npm test` runs them in a few seconds, and CI runs them before the build
+so a red test stops the deploy.
 
 Every model's checker has its own `validate.test.ts` (the physical one lives in `physical.test.ts`)
 built on a small scene builder, so a rule is added by writing the diagram that should trip it. Each
@@ -376,68 +347,27 @@ file also asserts that the samples the app ships raise **no errors** — that is
 that is too eager, which is the failure mode that matters here: a checker crying wolf on correct
 work teaches students to ignore it.
 
-### Two bugs the two-browser test found, and what they teach
+`src/platform/Canvas.test.tsx` covers the interaction layer: selection, dragging with its single
+undo step per gesture, grid snapping, marquee, the connect tool, palette drops, inline rename, and
+pan/zoom. `src/local/library.test.ts` covers the storage operations that could lose work — saving
+over the wrong record, renaming, deleting, and whether a backup can actually be restored — against
+`fake-indexeddb`.
 
-Convergence tests had passed all along. Both of these lived in the *session* around the CRDT, which
-is why wiring two documents together in a test never showed them.
+The DOM-dependent files opt in with a `// @vitest-environment jsdom` docblock rather than slowing
+the rest down. `src/test/dom.ts` holds the shims jsdom is missing: `PointerEvent`, `DragEvent` and
+pointer capture.
 
-**Join sync ran one way.** The joiner asked the room for what it lacked; nobody asked the joiner.
-Every client holds structs the others have never seen — the meta writes `replace()` makes, the
-sample loaded at startup — so an edit built on top of those was unintegrable for everyone else. Yjs
-does not drop such an update, it parks it in `pendingStructs` awaiting the missing dependency, which
-never arrives. The effect was that **user two's edits never appeared for user one and never would**,
-while user two's own screen looked perfectly correct. A silent, permanent, one-way split.
-`sync-reply` now carries a state vector of its own and the requester answers it, so the exchange runs
-both ways and ends at two hops.
-
-**Opening a diagram emptied the live one.** `openIntoDoc` cleared the document and refilled it. A
-live document is attached to a broadcast channel, so clearing it *is* an edit: everyone still in the
-room being left watched their diagram empty out and refill with the one the leaver had opened. In
-App.tsx the switch happens synchronously, before React tears the provider down, so the wipe went out
-every time. Opening now builds a *new* `DiagramDoc` — see `reset` in `useDiagramDoc.ts` — and React
-swaps sessions. That also stops each document accumulating every diagram the tab ever opened into
-the state that gets saved.
-
-The lesson worth keeping: **a document bound to a channel has no private edits.** Anything done to it
-to prepare for something else is broadcast. Prepare a new document instead.
-
-`provider.test.ts` now runs the real provider over a stand-in channel, and `session.test.ts` covers
-the protocol and the reset seam, so neither can regress quietly.
-
-### Verified in two browsers, 8 September 2026
-
-Two accounts in one diagram, edits flowing **both ways**. That was the symptom the one-directional
-sync caused, so the fix is confirmed against the real Supabase Realtime transport and not only
-against the stand-in channel in the tests. This was the project's last substantial unknown.
-
-Still confirmed only by test, not by hand: switching to another diagram leaving the other person
-untouched, and cursors and presence under genuine network conditions. Check that Realtime is enabled
-for the project if peers never appear.
-
-### Saving keeps a diagram private
-
-The toolbar's Save creates a diagram with no project. Putting one into a project is deliberate:
-"Save current here" with that project showing, or "Move into project" on a row.
-
-It did not start that way. Save followed whichever project was last opened, and that selection is
-sticky for the whole session and invisible from the toolbar — so opening a project once meant every
-diagram saved afterwards was silently readable and editable by everyone in it. Two accounts finding
-they could edit each other's "private" work is what surfaced it. Nothing was wrong in the database:
-RLS was checked against a second account's JWT and refused every write it should have refused. The
-mistake was that the app chose a sharing destination on the user's behalf and never said so.
-
-The status line now always ends in `private` or `shared in <project>`, because the one thing a
-person must never have to guess is who else can read what is on screen.
+**Still untested:** `App.tsx` wiring, which is where the save binding and the autosave live.
 
 ## 8. Backlog, in the order I would do it
 
-1. **Finish the two-browser check** — edits both ways is done (§7). Left to try by hand: switching
-   to another diagram while someone else is in the first, and whether cursors actually appear.
-2. **Extend test coverage** to the parts still untested: `App.tsx` wiring, the inspectors, and
-   `cloud/` (which would need the API stubbed). *(The `validate.ts` rules and `Canvas.tsx`
-   interaction are now covered — see §7.)*
-3. Turn on the free-plan password settings (§4): minimum length and required character classes.
-4. Rename the Supabase project to match (cosmetic; the database, keys and URL are unaffected).
+1. **Finish the migration**: once the old diagrams are imported, delete `src/local/importFromCloud.ts`,
+   drop `@supabase/supabase-js`, remove the `VITE_SUPABASE_*` secrets from the workflow, and delete
+   the Supabase project itself.
+2. **Test `App.tsx`**, particularly the library binding and the two autosave layers. It is the last
+   substantial untested area and it is the one that holds the work.
+3. Consider the File System Access API so a diagram can be saved straight back to a file on disk,
+   which would make browser storage a convenience rather than the system of record. Chrome only.
 
 ---
 
@@ -465,3 +395,7 @@ Recorded so they are not re-argued.
 | Old repo kept as a redirect | GitHub does not forward renamed Pages URLs, and the diagram lives in the fragment |
 | Cursors + selection highlights | Chosen as part of the real-time work |
 | Instance diagrams linked with constraint checking | Turns them into a way to test the model, not just draw it |
+| Diagrams kept in the browser, no backend | A free hosted database pauses itself when idle; a tool that stops accepting coursework because a server went to sleep is the wrong shape |
+| Library entries stored as the export format | One format for the file on disk and the record in the browser, so exporting is a copy and nothing can drift |
+| Yjs kept after collaboration was removed | It is the undo stack and it holds the work; replacing it risks the one thing that must not lose a diagram, to drop a dependency |
+| Cloud code deleted rather than disabled | Dead code that looks live is worse than none — the next reader cannot tell what the app does |

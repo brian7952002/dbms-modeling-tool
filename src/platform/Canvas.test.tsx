@@ -79,7 +79,6 @@ interface Options {
   tool?: Tool;
   snap?: number;
   viewport?: Viewport;
-  peers?: React.ComponentProps<typeof Canvas>['peers'];
 }
 
 function setup(options: Options = {}) {
@@ -102,7 +101,6 @@ function setup(options: Options = {}) {
       snap={options.snap ?? 0}
       issues={new Map()}
       onAddNodeAt={onAddNodeAt}
-      peers={options.peers}
     />,
   );
 
@@ -557,32 +555,6 @@ describe('rendering', () => {
     };
     setup({ diagram });
     expect(document.querySelectorAll('g.edge')).toHaveLength(0);
-  });
-
-  it('draws a teammate cursor and what they have selected', () => {
-    setup({
-      peers: [
-        {
-          clientId: 'p1',
-          name: 'Sam',
-          color: '#e11d48',
-          cursor: { x: 250, y: 160 },
-          selection: ['a'],
-        },
-      ],
-    });
-
-    const peers = document.querySelector('g.peers')!;
-    expect(peers.querySelector('g')?.getAttribute('transform')).toBe('translate(250 160)');
-    expect(peers.textContent).toContain('Sam');
-
-    // The halo around the shape they have selected. It is a direct child;
-    // the other rect in here is the pill behind the cursor label.
-    const halos = [...peers.children].filter((el) => el.tagName === 'rect');
-    expect(halos).toHaveLength(1);
-    // Drawn 5px outside the shape it surrounds.
-    expect(halos[0].getAttribute('x')).toBe('25');
-    expect(halos[0].getAttribute('width')).toBe('150');
   });
 
   it('marks the selected shape as selected', () => {

@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Tool } from '../platform/Canvas';
-import { colorFor as peerColor } from '../cloud/presence';
 
 interface Props {
   title: string;
@@ -19,13 +18,8 @@ interface Props {
   showGrid: boolean;
   snapOn: boolean;
   theme: 'light' | 'dark';
-  cloudEnabled: boolean;
-  userEmail: string | null;
-  /** Short status line for the open cloud document, e.g. "Saved 2 min ago". */
-  cloudStatus: string | null;
-  /** Other people with this diagram open right now. */
-  peers: { userId: string; name: string }[];
-  projectName: string | null;
+  /** Where the diagram on screen stands, e.g. "Saved" or "Unsaved changes". */
+  saveStatus: string | null;
   onAction: (action: ToolbarAction) => void;
 }
 
@@ -51,10 +45,7 @@ export type ToolbarAction =
   | 'models'
   | 'derive'
   | 'library'
-  | 'projects'
-  | 'history'
-  | 'cloud-save'
-  | 'account'
+  | 'save-to-library'
   | 'help';
 
 function Menu({ label, children }: { label: string; children: React.ReactNode }) {
@@ -98,11 +89,7 @@ export function Toolbar({
   showGrid,
   snapOn,
   theme,
-  cloudEnabled,
-  userEmail,
-  cloudStatus,
-  peers,
-  projectName,
+  saveStatus,
   onAction,
 }: Props) {
   const act = (a: ToolbarAction) => () => onAction(a);
@@ -148,25 +135,9 @@ export function Toolbar({
         ))}
       </Menu>
 
-      <Menu label="Cloud">
-        {cloudEnabled ? (
-          <>
-            <button type="button" onClick={act('library')}>Diagrams…</button>
-            <button type="button" onClick={act('projects')}>Projects &amp; members…</button>
-            <button type="button" onClick={act('history')}>History &amp; activity…</button>
-            <button type="button" onClick={act('cloud-save')}>
-              Save now
-            </button>
-            <hr />
-            <button type="button" onClick={act('account')}>
-              {userEmail ? `Signed in as ${userEmail}` : 'Sign in / create account'}
-            </button>
-          </>
-        ) : (
-          <button type="button" onClick={act('account')}>
-            Accounts not configured…
-          </button>
-        )}
+      <Menu label="My diagrams">
+        <button type="button" onClick={act('save-to-library')}>Save to my diagrams</button>
+        <button type="button" onClick={act('library')}>Open, rename, back up…</button>
       </Menu>
 
       <Menu label="Export">
@@ -233,19 +204,7 @@ export function Toolbar({
 
       <div className="spacer" />
 
-      {peers.length > 0 && (
-        <span className="peers" title={`${peers.map((p) => p.name).join(', ')} also have this open`}>
-          {peers.slice(0, 4).map((p) => (
-            <span key={p.userId} className="peer-dot" style={{ background: peerColor(p.userId) }}>
-              {p.name.slice(0, 1).toUpperCase()}
-            </span>
-          ))}
-          {peers.length > 4 && <span className="peer-more">+{peers.length - 4}</span>}
-        </span>
-      )}
-
-      {projectName && <span className="cloud-status project-chip">{projectName}</span>}
-      {cloudStatus && <span className="cloud-status">{cloudStatus}</span>}
+      {saveStatus && <span className="cloud-status">{saveStatus}</span>}
 
       <button
         type="button"
@@ -261,24 +220,6 @@ export function Toolbar({
           : warningCount > 0
             ? `${warningCount} warning${warningCount === 1 ? '' : 's'}`
             : 'Model OK'}
-      </button>
-
-      <button
-        type="button"
-        className="account-chip"
-        onClick={act('account')}
-        title={userEmail ? 'Account settings' : 'Sign in to save diagrams to your account'}
-      >
-        {userEmail ? (
-          <>
-            <span className="avatar" aria-hidden>
-              {userEmail.slice(0, 1).toUpperCase()}
-            </span>
-            {userEmail.split('@')[0]}
-          </>
-        ) : (
-          'Sign in'
-        )}
       </button>
 
       <button type="button" onClick={act('toggle-theme')} title="Switch light / dark">

@@ -45,8 +45,9 @@ omitted with a note, subclasses get one table each keyed on the inherited primar
 types get a surrogate key with mutually exclusive links. Constraints SQL cannot express — total and
 disjoint specialisation — are called out as warnings rather than silently dropped.
 
-**Sharing and storage.** Autosave to the browser, `.eer.json` files, SVG and PNG export, a shareable
-link that carries the entire diagram in the URL, and optional accounts with a private cloud library.
+**Storage and sharing.** A library of named diagrams kept in your browser, `.eer.json` files, SVG
+and PNG export, and a shareable link that carries the entire diagram in the URL. No account, no
+server, no network — the whole thing is a folder of static files, so nothing can expire or go down.
 
 **Three models, one project.** The design process has three stages and this has a tool for each:
 the **conceptual** EER diagram, the **logical** relational schema, and the **physical** design —
@@ -119,70 +120,29 @@ Then open the URL Vite prints. `npm run build` produces a static `dist/` directo
 The Vite `base` is `./`, so the site works at `https://<user>.github.io/<repo>/` without any
 repository-specific configuration.
 
-Accounts are optional — with no Supabase secrets set, the workflow still produces a fully working
-local-only build.
+There is nothing to configure: no secrets, no services. The workflow builds the site and publishes
+it.
 
 ---
 
-## Optional: accounts and cloud saving
+## Where your diagrams live
 
-Sign-in lets each person keep a private library of diagrams and open them from any device. It is
-backed by [Supabase](https://supabase.com) (free tier is ample) and takes about five minutes to set
-up.
+In your browser, in IndexedDB, under **My diagrams**. Save as many as you like, reopen, rename,
+duplicate, export. Once a diagram has been saved once, later edits go back to it on their own.
 
-1. Create a project at [supabase.com](https://supabase.com).
-2. In the project's **SQL Editor**, paste and run [`supabase/schema.sql`](supabase/schema.sql). It
-   creates the `diagrams` table and the row-level-security policies.
-3. **Authentication ▸ Sign In / Providers** → make sure **Email** is enabled. Email confirmation is
-   on by default; turn it off there if you would rather people sign in immediately.
-4. **Authentication ▸ URL Configuration** → add your Pages URL
-   (`https://<user>.github.io/<repo>/`) to **Site URL** and **Redirect URLs**, so confirmation and
-   password-reset links come back to the app.
-5. **Project Settings ▸ API** → copy the **Project URL** and the **anon / public** key.
-6. Add them as repository secrets under **Settings ▸ Secrets and variables ▸ Actions**:
-   `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`.
-7. Re-run the deploy workflow.
+A separate autosave keeps whatever is on the canvas even before you have named it, so closing the
+tab is never destructive.
 
-For local development, copy `.env.example` to `.env.local` and fill in the same two values.
+**The limitation, stated plainly:** browser storage is not a safe place for the only copy of
+anything. Clearing site data removes it, and it does not follow you to another browser or machine.
+So the library offers **Back up all diagrams** — one file holding everything — and **Restore from a
+backup** to read it back. Individual diagrams export as `.eer.json` too.
 
-### Working as a team
-
-**Cloud ▸ Projects & members** creates a project and generates invite links. Anyone signed in who
-opens a link joins with that link's role; revoking a link stops it working immediately, while people
-who already joined stay. Move a personal diagram into a project from the library, or back out again.
-
-| Role | Can |
-| --- | --- |
-| Owner | Everything, plus managing members and invite links, and deleting the project |
-| Editor | Open and change the project's diagrams, publish read-only links |
-| Viewer | Open, export and copy — no changes |
-
-**Cloud ▸ History & activity** shows the diagram's version history with the author of each snapshot,
-and restores any of them. A restore is saved on top as a new version, so the trail is never rewritten.
-
-Two people editing at once is handled without a merge engine. Presence shows who else is in the
-diagram, and every save carries the version it was based on: if someone saved first, yours is
-refused and you are offered the choice of reloading theirs or keeping yours as a separate copy.
-Nothing is overwritten silently.
-
-### Why it is safe to publish those keys
-
-The publishable key is designed to ship in client bundles. On its own it grants nothing — every
-table is guarded by row-level security, and the guarantees are properties of the database rather
-than of the interface:
-
-- A signed-in user reads their own diagrams, plus those in projects they belong to. Nothing else.
-- A viewer cannot write, even by calling the API directly.
-- `owner` is revoked from the anonymous role at the column level, so a published diagram exposes its
-  content without its author's id.
-- Invite codes are never selectable. Redemption goes through a `SECURITY DEFINER` function, so a
-  link cannot be found by enumeration.
-- `diagram_versions` and `activity` have no INSERT policy at all. Only the audited functions write
-  them, so the history cannot be forged from a browser.
-
-The one deliberate exception is publishing: a diagram its owner explicitly publishes becomes
-readable by anyone holding the link. That can be reverted at any time, and a published link always
-opens as an editable *copy*, so it can never overwrite the original.
+This app used to offer accounts, shared projects and real-time collaborative editing, backed by
+Supabase. That was removed in October 2026: the free database paused itself after a week of
+inactivity, which took sign-in with it, which took saving with it. A tool for coursework that can
+stop accepting work because a server went idle is the wrong shape. The code is in the git history if
+anyone wants it back.
 
 ---
 
@@ -193,13 +153,11 @@ exactly the EER notation rather than an approximation of it.
 
 ```
 src/
-  model/       types, geometry, graph queries, validation, SQL generation, samples
-  state/       reducer with undo/redo history
-  components/  canvas, shapes, palette, inspector, panels, modals
-  cloud/       Supabase client, auth context, diagram CRUD, projects, presence
-  export/      SVG serialisation and PNG rasterisation
-supabase/
-  schema.sql   tables, row-level-security policies, and the audited write functions
+  platform/    canvas, geometry, text measurement, serialisation, export, the document
+  ecosystem/   the model registry — the seam every modelling tool plugs into
+  models/      eer, instance, relational, physical: shapes, rules, inspectors, generators
+  local/       the diagram library (IndexedDB) and its backup format
+  app/         toolbar and the library dialog
 ```
 
 Two decisions are worth knowing about if you read the code:
@@ -207,13 +165,12 @@ Two decisions are worth knowing about if you read the code:
 - **Diagram styling lives inside the `<svg>` as a `<style>` element.** SVG export is therefore a
   clone, a few `remove()` calls and a new `viewBox` — the exported file looks identical outside the
   app with no style-rewriting step.
-- **Collaboration is enforced in Postgres, not in React.** Saves go through `save_diagram()`, which
-  re-checks permission, rejects a stale write, records the snapshot and writes the activity row in
-  one transaction. The interface hides what you cannot do; the database is what stops you.
+- **A library entry is the export format.** A saved diagram and a `.eer.json` file on disk are the
+  same object, so exporting is a copy rather than a conversion and the two cannot drift apart.
 - **Chen ratio labels and `(min,max)` constraints read in opposite directions.** In `A —1— R —N— B`
   it is *B* whose table takes the foreign key; in `A —(1,N)— R —(1,1)— B` the `(1,1)` marks the same
-  side. `functionalSides()` in `src/model/ddl.ts` normalises both notations before anything
-  downstream looks at them.
+  side. `functionalSides()` in `src/models/eer/ddl.ts` normalises both notations before
+  anything downstream looks at them.
 
 ---
 
