@@ -12,7 +12,7 @@
  */
 
 import { createClient } from '@supabase/supabase-js';
-import { saveDiagram } from './library';
+import { listDiagrams, saveDiagram } from './library';
 import { fromFile, toFile } from '../platform/serialize';
 import type { DiagramFile } from '../platform/types';
 
@@ -23,7 +23,10 @@ export const canImportFromCloud = Boolean(URL && KEY);
 
 export interface ImportResult {
   imported: number;
-  skipped: string[];
+  /** Already in the library under the same name, so left alone. */
+  alreadyHere: number;
+  /** Could not be read, named so it is obvious what is missing. */
+  unreadable: string[];
 }
 
 /**
@@ -31,6 +34,13 @@ export interface ImportResult {
  *
  * The password is used for exactly one request and never stored; the session
  * is ended before this returns, so nothing is left signed in afterwards.
+ *
+ * Running it twice is safe and useful: anything already in the library under
+ * the same name is left alone, so a second run brings back only what is
+ * missing — which is what you want after deleting one by mistake. A diagram
+ * you have since renamed locally will come back under its old name rather
+ * than overwrite your version, because losing an edit is worse than gaining a
+ * duplicate.
  */
 export async function importFromCloud(email: string, password: string): Promise<ImportResult> {
   if (!URL || !KEY) {
@@ -58,23 +68,31 @@ export async function importFromCloud(email: string, password: string): Promise<
     if (error) throw new Error(error.message);
 
     const rows = (data ?? []) as { id: string; title: string; data: unknown; kind: string }[];
-    const skipped: string[] = [];
+    const have = new Set((await listDiagrams()).map((d) => d.title.trim().toLowerCase()));
+    const unreadable: string[] = [];
     let imported = 0;
+    let alreadyHere = 0;
 
     for (const row of rows) {
       try {
         // Round-trip through the file reader so anything malformed is caught
         // here, one diagram at a time, instead of failing the whole import.
         const parsed = fromFile(row.data);
-        const file: DiagramFile = toFile(parsed.diagram, parsed.title || row.title, parsed.model);
+        const title = parsed.title || row.title;
+        if (have.has(title.trim().toLowerCase())) {
+          alreadyHere += 1;
+          continue;
+        }
+        const file: DiagramFile = toFile(parsed.diagram, title, parsed.model);
         await saveDiagram(null, file);
+        have.add(title.trim().toLowerCase());
         imported += 1;
       } catch {
-        skipped.push(row.title || row.id);
+        unreadable.push(row.title || row.id);
       }
     }
 
-    return { imported, skipped };
+    return { imported, alreadyHere, unreadable };
   } finally {
     await client.auth.signOut();
   }

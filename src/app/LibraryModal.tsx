@@ -245,7 +245,9 @@ export function LibraryModal({
           <h3>Bring over your old account</h3>
           <p className="panel-hint">
             Diagrams you saved before this app went offline-only are still on the old server. This
-            copies them all into this browser once, after which the account is finished with.
+            copies them into this browser. Anything already here under the same name is left alone,
+            so running it again brings back only what is missing — useful if you delete one by
+            mistake.
           </p>
           <form
             className="auth-form"
@@ -258,11 +260,16 @@ export function LibraryModal({
                   String(form.get('password') ?? ''),
                 );
                 await refresh();
-                notify(
-                  result.skipped.length > 0
-                    ? `Brought over ${result.imported}. Could not read: ${result.skipped.join(', ')}.`
-                    : `Brought over ${result.imported} diagram${result.imported === 1 ? '' : 's'}.`,
-                );
+                const parts = [
+                  `Brought over ${result.imported} diagram${result.imported === 1 ? '' : 's'}`,
+                ];
+                if (result.alreadyHere > 0) {
+                  parts.push(`${result.alreadyHere} already here`);
+                }
+                if (result.unreadable.length > 0) {
+                  parts.push(`could not read ${result.unreadable.join(', ')}`);
+                }
+                notify(`${parts.join(' · ')}.`);
               });
             }}
           >
