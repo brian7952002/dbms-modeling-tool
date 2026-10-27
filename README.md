@@ -27,6 +27,7 @@ No installation for the people using it: it is a static site, so a URL is enough
 | Total participation | Double line |
 | Recursive relationship | Two legs to one diamond, fanned apart, each with a role name |
 | Specialisation | Circle carrying `d` (disjoint) or `o` (overlapping), or a triangle if your course uses that form; double line for total |
+| Plain inheritance | No circle at all — a lone subclass on a line carrying only `⊂`, as Elmasri draws MANAGER under EMPLOYEE |
 | Subset inclusion | `⊂` on every subclass line and on a category line, opening towards the superclass |
 | Attribute-defined specialisation | The defining attribute labelled on the superclass line |
 | Shared subclass | One entity may be a subclass under several specialisations |

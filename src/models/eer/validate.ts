@@ -302,10 +302,18 @@ export function validate(d: Diagram): Issue[] {
         `Specialisation${sup ? ` of "${sup.name}"` : ''} has no subclasses.`,
         [isa.id],
       );
-    } else if (subs.length === 1 && isa.disjoint) {
+    } else if (subs.length === 1 && isa.constrained !== false) {
       add(
         'info',
-        `Specialisation of "${sup?.name ?? '?'}" has a single subclass, so the disjoint/overlapping constraint has no effect.`,
+        `Specialisation of "${sup?.name ?? '?'}" has a single subclass, so the disjoint/overlapping constraint has no effect. Set it to "no constraint" for plain inheritance.`,
+        [isa.id],
+      );
+    } else if (subs.length > 1 && isa.constrained === false) {
+      // With one subclass the constraint is noise; with several it is the
+      // whole question — whether an entity may be in more than one of them.
+      add(
+        'warning',
+        `Specialisation of "${sup?.name ?? '?'}" has ${subs.length} subclasses but no disjoint/overlapping constraint, so the diagram does not say whether something can be in more than one.`,
         [isa.id],
       );
     }

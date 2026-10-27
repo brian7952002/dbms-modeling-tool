@@ -315,7 +315,8 @@ export function checkAgainstSchema(d: Diagram, schema: EerDiagram): Issue[] {
       }
     }
 
-    if (isa.disjoint && subLabelSets.length > 1) {
+    // Nothing to enforce when the specialisation declares no constraint.
+    if (isa.constrained !== false && isa.disjoint && subLabelSets.length > 1) {
       const seen = new Map<string, string[]>();
       for (const { entity, labels } of subLabelSets) {
         for (const label of labels) {

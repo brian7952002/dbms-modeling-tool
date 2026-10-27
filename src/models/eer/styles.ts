@@ -78,6 +78,9 @@ export function diagramCss(theme: Theme): string {
 .eer-svg .n-attribute .shape-inner { stroke: var(--attr-line); }
 .eer-svg .n-attribute.derived .shape { stroke-dasharray: 6 4; }
 .eer-svg .n-isa .shape { fill: var(--isa-fill); stroke: var(--isa-line); }
+/* The handle on an unconstrained specialisation. Stripped from exports. */
+.eer-svg .n-isa .isa-joint { fill: var(--isa-line); fill-opacity: 0.3; stroke: none; }
+.eer-svg .n-isa.selected .isa-joint { fill-opacity: 0.85; }
 .eer-svg .n-union .shape { fill: var(--union-fill); stroke: var(--union-line); }
 .eer-svg .n-isa text, .eer-svg .n-union text { font-size: 15px; font-weight: 700; }
 .eer-svg .n-note .note-area { fill: transparent; }

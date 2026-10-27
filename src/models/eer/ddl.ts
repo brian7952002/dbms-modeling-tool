@@ -650,9 +650,9 @@ export function mapToRelational(d: Diagram): RelationalSchema {
     const supTable = entityTable.get(sup.id)!;
     const subNames = subs.map((s) => entityTable.get(s.id)!.name);
     notes.push(
-      `Specialisation of "${sup.name}" (${isa.disjoint ? 'disjoint' : 'overlapping'}, ${
-        isa.total ? 'total' : 'partial'
-      }) mapped to one table per subclass: ${subNames.join(', ')}.`,
+      `Specialisation of "${sup.name}" (${
+        isa.constrained === false ? 'no disjointness constraint' : isa.disjoint ? 'disjoint' : 'overlapping'
+      }, ${isa.total ? 'total' : 'partial'}) mapped to one table per subclass: ${subNames.join(', ')}.`,
     );
     if (isa.total) {
       warnings.push(
@@ -661,7 +661,7 @@ export function mapToRelational(d: Diagram): RelationalSchema {
         )}. SQL cannot express that as a constraint — enforce it with a trigger or in application code.`,
       );
     }
-    if (isa.disjoint && subs.length > 1) {
+    if (isa.constrained !== false && isa.disjoint && subs.length > 1) {
       warnings.push(
         `Disjoint specialisation of "${sup.name}" means ${article(supTable.name)} ${
           supTable.name

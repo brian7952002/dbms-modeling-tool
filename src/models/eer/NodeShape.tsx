@@ -166,19 +166,31 @@ function NodeShapeImpl({
       break;
 
     case 'isa':
-      // Elmasri & Navathe draw the d/o marker in a circle; other texts use a
-      // triangle, which is rotated so its apex points at the superclass.
-      shape =
-        node.symbol === 'triangle' ? (
-          <g transform={`rotate(${isaAngle} ${x} ${y})`}>
-            <polygon className="shape" points={trianglePoints(x, y, w, h)} />
-          </g>
-        ) : (
-          <circle className="shape" cx={x} cy={y} r={Math.min(w, h) / 2} />
-        );
-      label = node.disjoint ? 'd' : 'o';
-      // In the triangle form the label sits in the wide lower half.
-      labelDy = node.symbol === 'triangle' ? 8 : 0;
+      if (node.constrained === false) {
+        // Plain inheritance: no circle and no letter, so the subclass hangs
+        // off its superclass on one line carrying only the ⊂.
+        //
+        // The joint still has to be here for the two lines to meet at, and
+        // has to be grabbable to move or configure, so it is drawn as a faint
+        // dot that the exporter strips — the editor gets a handle, the
+        // exported diagram gets the notation.
+        shape = <circle className="isa-joint no-export" cx={x} cy={y} r={Math.min(w, h) / 2} />;
+        label = '';
+      } else {
+        // Elmasri & Navathe draw the d/o marker in a circle; other texts use a
+        // triangle, which is rotated so its apex points at the superclass.
+        shape =
+          node.symbol === 'triangle' ? (
+            <g transform={`rotate(${isaAngle} ${x} ${y})`}>
+              <polygon className="shape" points={trianglePoints(x, y, w, h)} />
+            </g>
+          ) : (
+            <circle className="shape" cx={x} cy={y} r={Math.min(w, h) / 2} />
+          );
+        label = node.disjoint ? 'd' : 'o';
+        // In the triangle form the label sits in the wide lower half.
+        labelDy = node.symbol === 'triangle' ? 8 : 0;
+      }
       break;
 
     case 'union':
@@ -250,9 +262,11 @@ function NodeShapeImpl({
       onDoubleClick={(e) => onDoubleClick?.(e, node)}
     >
       {shape}
-      <text x={x} y={y + labelDy} textAnchor="middle" dominantBaseline="central">
-        {label}
-      </text>
+      {label !== '' && (
+        <text x={x} y={y + labelDy} textAnchor="middle" dominantBaseline="central">
+          {label}
+        </text>
+      )}
       {underline}
       {node.kind === 'attribute' && derivationFlyout(node)}
       {akLabel && (
@@ -262,8 +276,12 @@ function NodeShapeImpl({
       )}
       {node.kind === 'isa' && (
         <title>
-          {node.disjoint ? 'Disjoint' : 'Overlapping'} ·{' '}
-          {node.total ? 'total' : 'partial'} specialisation
+          {node.constrained === false
+            ? 'Subclass'
+            : node.disjoint
+              ? 'Disjoint'
+              : 'Overlapping'}{' '}
+          · {node.total ? 'total' : 'partial'} specialisation
         </title>
       )}
       {node.kind === 'union' && (

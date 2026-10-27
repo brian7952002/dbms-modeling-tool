@@ -652,6 +652,64 @@ describe('specialisation', () => {
     expect(errors(s.diagram())).toEqual([]);
   });
 
+  // Elmasri's MANAGER: a lone subclass on a plain line, no circle, no letter.
+  it('accepts plain inheritance with no disjointness constraint', () => {
+    const s = scene();
+    const sup = s.strong('User');
+    const sub = s.entity('Director');
+    s.attr(sub, 'appointed_on');
+    const i = s.isa({ constrained: false });
+    s.link('isa-super', sup.id, i.id);
+    s.link('isa-sub', sub.id, i.id);
+
+    expect(validate(s.diagram())).toEqual([]);
+  });
+
+  // The note only makes sense while a constraint is actually being asked for.
+  it('stops suggesting d/o once the constraint is turned off', () => {
+    const s = scene();
+    const sup = s.strong('User');
+    const sub = s.entity('Director');
+    s.attr(sub, 'appointed_on');
+    const i = s.isa({ constrained: false });
+    s.link('isa-super', sup.id, i.id);
+    s.link('isa-sub', sub.id, i.id);
+
+    expect(saying(infos(s.diagram()), 'has no effect')).toBe(false);
+  });
+
+  it('points out that d/o is moot with a single subclass, whichever it is', () => {
+    for (const disjoint of [true, false]) {
+      const s = scene();
+      const sup = s.strong('User');
+      const sub = s.entity('Director');
+      s.attr(sub, 'appointed_on');
+      const i = s.isa({ disjoint });
+      s.link('isa-super', sup.id, i.id);
+      s.link('isa-sub', sub.id, i.id);
+
+      expect(saying(infos(s.diagram()), 'has no effect')).toBe(true);
+    }
+  });
+
+  // With one subclass the constraint is noise; with several it is the point.
+  it('asks for a constraint once there is more than one subclass', () => {
+    const s = scene();
+    const sup = s.strong('Person');
+    const a = s.entity('Student');
+    const b = s.entity('Staff');
+    s.attr(a, 'gpa');
+    s.attr(b, 'payroll_no');
+    const i = s.isa({ constrained: false });
+    s.link('isa-super', sup.id, i.id);
+    s.link('isa-sub', a.id, i.id);
+    s.link('isa-sub', b.id, i.id);
+
+    expect(
+      saying(warnings(s.diagram()), 'does not say whether something can be in more than one'),
+    ).toBe(true);
+  });
+
   it('warns when a subclass declares its own key', () => {
     const s = scene();
     const sup = s.strong('Person');

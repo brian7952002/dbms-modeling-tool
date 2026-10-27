@@ -27,6 +27,7 @@ const NOTATION: [string, string][] = [
   ['1 / N / M labels', 'Cardinality ratio. One “1” side and one “N” side make a 1:N relationship.'],
   ['(min,max)', 'Structural constraint: how many relationship instances one entity instance joins.'],
   ['Circle with d or o', 'Specialisation. d = disjoint subclasses, o = overlapping. Switch it to a triangle in the inspector if your course uses that form.'],
+  ['Subclass line with no circle', 'Plain inheritance — one subclass hanging off its superclass with nothing but the ⊂ on the line. A lone subclass has nothing to be disjoint from, so set Disjointness to “no constraint”. This is how Elmasri draws MANAGER under EMPLOYEE.'],
   ['⊂ on a subclass line', 'Subset inclusion: every member of the subclass is a member of the superclass. The opening always faces the superclass.'],
   ['Double line into the marker', 'Total specialisation: every superclass member belongs to some subclass.'],
   ['Label on the superclass line', 'Attribute-defined specialisation — the defining attribute, e.g. Job_type.'],

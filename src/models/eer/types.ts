@@ -65,8 +65,22 @@ export interface AttributeNode extends NodeBase {
 
 export interface IsaNode extends NodeBase {
   kind: 'isa';
-  /** true = disjoint (d), false = overlapping (o). */
+  /** true = disjoint (d), false = overlapping (o). Unread when unconstrained. */
   disjoint: boolean;
+  /**
+   * Whether a disjoint/overlapping constraint applies at all.
+   *
+   * Undefined means it does, which is what every diagram written before this
+   * existed meant. `false` is the MANAGER case in Elmasri's Figure 4.1: plain
+   * inheritance, where one subclass hangs off its superclass on a line with
+   * nothing but the ⊂ on it. A lone subclass has nothing to be disjoint from,
+   * so being made to choose d or o would be answering a question the diagram
+   * is not asking.
+   *
+   * `disjoint` is kept rather than cleared, so turning the constraint back on
+   * restores the choice that was there before.
+   */
+  constrained?: boolean;
   /** true = total specialisation (double line to the superclass). */
   total: boolean;
   /**

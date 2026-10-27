@@ -30,7 +30,7 @@ export const PALETTE: PaletteItem[] = [
   {
     kind: 'isa',
     label: 'ISA / specialisation',
-    hint: 'Superclass–subclass hierarchy: disjoint or overlapping, total or partial. Subclass lines carry the ⊂ subset symbol.',
+    hint: 'Superclass–subclass hierarchy: disjoint, overlapping, or no constraint at all for plain inheritance. Total or partial. Subclass lines carry the ⊂ subset symbol.',
     glyph: (
       <>
         <circle cx={24} cy={20} r={13} {...stroke} stroke="#9333ea" fill="#fbf0ff" />

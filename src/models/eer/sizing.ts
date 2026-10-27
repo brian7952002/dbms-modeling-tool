@@ -1,9 +1,15 @@
 import { measureText } from '../../platform/measure';
 import type { NodeKind } from './types';
 
-/** Size of a specialisation marker, which depends on which form it takes. */
-export const isaSize = (symbol?: 'circle' | 'triangle') =>
-  symbol === 'triangle' ? { w: 74, h: 54 } : { w: 46, h: 46 };
+/**
+ * Size of a specialisation marker, which depends on which form it takes.
+ *
+ * An unconstrained one carries no letter and is drawn as nothing at all, so it
+ * shrinks to a joint: small enough that the superclass and subclass lines meet
+ * as one straight line rather than bending around a shape.
+ */
+export const isaSize = (symbol?: 'circle' | 'triangle', constrained = true) =>
+  !constrained ? { w: 18, h: 18 } : symbol === 'triangle' ? { w: 74, h: 54 } : { w: 46, h: 46 };
 
 /** Shape size that comfortably contains the label, per shape geometry. */
 export function fitSize(kind: NodeKind, name: string): { w: number; h: number } {

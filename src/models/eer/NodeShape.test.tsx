@@ -3,7 +3,7 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { cleanup, render } from '@testing-library/react';
 import { NodeShape } from './NodeShape';
 import { pinTextMeasurement } from '../../test/dom';
-import type { AttributeNode } from './types';
+import type { AttributeNode, IsaNode } from './types';
 
 // The wrapping test asserts on measured widths, so measurement is pinned.
 beforeAll(pinTextMeasurement);
@@ -151,5 +151,73 @@ describe('the derivation flyout', () => {
     const { flyout } = draw(attribute({ derived: true, derivation: 'x + 1' }));
     expect(flyout!.closest('.no-export')).toBeNull();
     expect(flyout!.getAttribute('class')).not.toContain('no-export');
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+
+const isa = (extra: Partial<IsaNode> = {}): IsaNode => ({
+  id: 'i1',
+  kind: 'isa',
+  name: 'ISA',
+  x: 200,
+  y: 100,
+  w: 46,
+  h: 46,
+  disjoint: true,
+  total: false,
+  ...extra,
+});
+
+function drawIsa(node: IsaNode) {
+  render(
+    <svg className="eer-svg">
+      <NodeShape node={node} selected={false} />
+    </svg>,
+  );
+  return {
+    marker: document.querySelector('.n-isa circle.shape, .n-isa polygon.shape'),
+    joint: document.querySelector('circle.isa-joint'),
+    letter: document.querySelector('.n-isa text')?.textContent ?? null,
+    title: document.querySelector('.n-isa title')?.textContent ?? null,
+  };
+}
+
+describe('a specialisation marker', () => {
+  it('draws the circle and its letter when constrained', () => {
+    const d = drawIsa(isa({ disjoint: true }));
+    expect(d.marker).not.toBeNull();
+    expect(d.letter).toBe('d');
+    cleanup();
+
+    expect(drawIsa(isa({ disjoint: false })).letter).toBe('o');
+  });
+
+  // Elmasri's MANAGER: no circle, no letter, just the line and its ⊂.
+  it('draws neither circle nor letter when there is no constraint', () => {
+    const d = drawIsa(isa({ constrained: false }));
+    expect(d.marker).toBeNull();
+    expect(d.letter).toBeNull();
+  });
+
+  // The joint has to be grabbable in the editor and absent from the export,
+  // which is what the no-export class buys.
+  it('leaves a handle that the exporter strips', () => {
+    const d = drawIsa(isa({ constrained: false }));
+    expect(d.joint).not.toBeNull();
+    expect(d.joint!.getAttribute('class')).toContain('no-export');
+  });
+
+  it('still says what it is on hover', () => {
+    expect(drawIsa(isa({ constrained: false })).title).toContain('Subclass');
+    cleanup();
+    expect(drawIsa(isa({ disjoint: true })).title).toContain('Disjoint');
+  });
+
+  it('keeps drawing the circle for diagrams written before this existed', () => {
+    // No `constrained` field at all is what every older file has.
+    const node = isa();
+    expect(node.constrained).toBeUndefined();
+    expect(drawIsa(node).marker).not.toBeNull();
   });
 });

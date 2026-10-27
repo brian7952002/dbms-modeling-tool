@@ -359,7 +359,9 @@ export function Inspector({
                 .map((e) => ({ id: e.id, label: 'superclass of this hierarchy', note: '' })),
               ...isaParentsOf(diagram, node.id).map((isa) => ({
                 id: isa.id,
-                label: `subclass · ${isa.disjoint ? 'disjoint' : 'overlapping'}`,
+                label: `subclass · ${
+                  isa.constrained === false ? 'no constraint' : isa.disjoint ? 'disjoint' : 'overlapping'
+                }`,
                 note: isa.total ? 'total' : 'partial',
               })),
             ]}
@@ -515,13 +517,28 @@ export function Inspector({
 
       {node.kind === 'isa' && (
         <>
-          <Field label="Disjointness">
+          <Field
+            label="Disjointness"
+            hint="With a single subclass there is nothing to be disjoint from, so no constraint is the honest answer — and the one the textbook draws."
+          >
             <select
-              value={node.disjoint ? 'd' : 'o'}
-              onChange={(e) => patchNode(node.id, { disjoint: e.target.value === 'd' })}
+              value={node.constrained === false ? 'none' : node.disjoint ? 'd' : 'o'}
+              onChange={(e) => {
+                const choice = e.target.value;
+                if (choice === 'none') {
+                  patchNode(node.id, { constrained: false, ...isaSize(node.symbol, false) });
+                } else {
+                  patchNode(node.id, {
+                    constrained: true,
+                    disjoint: choice === 'd',
+                    ...isaSize(node.symbol, true),
+                  });
+                }
+              }}
             >
               <option value="d">Disjoint (d) — at most one subclass</option>
               <option value="o">Overlapping (o) — may belong to several</option>
+              <option value="none">No constraint — plain inheritance, no circle</option>
             </select>
           </Field>
           <Field label="Completeness" hint="Total specialisation is drawn as a double line to the superclass.">
@@ -533,6 +550,7 @@ export function Inspector({
               <option value="total">Total — every superclass member is in some subclass</option>
             </select>
           </Field>
+          {node.constrained !== false && (
           <Field
             label="Symbol"
             hint="Elmasri & Navathe draw a circle; some texts use a triangle labelled ISA. Either way each subclass line carries the ⊂ subset symbol."
@@ -548,6 +566,7 @@ export function Inspector({
               <option value="triangle">Triangle</option>
             </select>
           </Field>
+          )}
           <Field
             label="Defining attribute"
             hint="For attribute-defined specialisation — shown on the line to the superclass, e.g. Job_type."
