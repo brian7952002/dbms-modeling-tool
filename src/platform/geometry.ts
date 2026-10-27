@@ -1,8 +1,12 @@
 import type { BaseNode, Point } from './types';
 
 /**
- * How a model describes a shape's edge. Returning null means an ellipse
- * inscribed in the node's box, which is solved analytically.
+ * How a model describes a shape's edge.
+ *
+ * `null` means an ellipse inscribed in the node's box, which is solved
+ * analytically. An **empty array** means the node has no outline at all: it is
+ * a joint rather than a shape, so connectors run to its centre and two edges
+ * meeting there read as one unbroken line.
  */
 export type Outline = (node: BaseNode) => Point[] | null;
 
@@ -106,6 +110,9 @@ export function boundaryPoint(
   const poly = outline(n);
   let t: number;
   if (poly) {
+    // A node with no outline is a point: the connector runs to its centre
+    // rather than stopping short of a shape that is not drawn.
+    if (poly.length === 0) return { x: n.x, y: n.y };
     t = rayPolygonDistance(poly, { x: n.x, y: n.y }, ux, uy) ?? 0;
   } else {
     // Ellipse: solve (t*ux/a)^2 + (t*uy/b)^2 = 1

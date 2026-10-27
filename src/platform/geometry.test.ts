@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { orbitSlot } from './geometry';
-import type { BaseNode } from './types';
+import { boundaryPoint, edgeGeometry, orbitSlot } from './geometry';
+import type { BaseNode, Point } from './types';
 
 let seq = 0;
 const node = (x: number, y: number, w = 140, h = 60): BaseNode => ({
@@ -68,5 +68,62 @@ describe('orbitSlot', () => {
     }
     const spot = orbitSlot(owner, ATTR, wall, []);
     expect(Number.isFinite(spot.x) && Number.isFinite(spot.y)).toBe(true);
+  });
+});
+
+describe('a node with no outline', () => {
+  const joint = (): BaseNode => ({ id: 'j', kind: 'isa', name: '', x: 100, y: 100, w: 18, h: 18 });
+  const box = (id: string, x: number, y: number): BaseNode => ({
+    id,
+    kind: 'entity',
+    name: id,
+    x,
+    y,
+    w: 100,
+    h: 50,
+  });
+
+  // A joint stands in for a marker that is not drawn. Clipping to its boundary
+  // would leave a gap in the middle of a line that should look continuous.
+  const none = () => [] as Point[];
+
+  it('runs a connector to its centre rather than its boundary', () => {
+    const j = joint();
+    const p = boundaryPoint(j, { x: 500, y: 100 }, none);
+    expect(p).toEqual({ x: j.x, y: j.y });
+  });
+
+  it('does the same whatever direction the connector comes from', () => {
+    const j = joint();
+    for (const towards of [
+      { x: 0, y: 100 },
+      { x: 100, y: 0 },
+      { x: 240, y: 380 },
+    ]) {
+      expect(boundaryPoint(j, towards, none)).toEqual({ x: j.x, y: j.y });
+    }
+  });
+
+  // The two halves of a specialisation drawn as plain inheritance.
+  it('leaves no gap where two edges meet at it', () => {
+    const j = joint();
+    const above = box('USER', 100, 0);
+    const below = box('DIRECTOR', 100, 200);
+    const pick = (n: BaseNode) => (n.kind === 'isa' ? none() : null);
+
+    const upper = edgeGeometry(above, j, 0, pick);
+    const lower = edgeGeometry(j, below, 0, pick);
+
+    expect(upper.end).toEqual({ x: j.x, y: j.y });
+    expect(lower.start).toEqual({ x: j.x, y: j.y });
+    // Where one ends the next begins: one line, not two with a hole in it.
+    expect(upper.end).toEqual(lower.start);
+  });
+
+  it('still clips to the boundary of a shape that is drawn', () => {
+    const b = box('USER', 100, 0);
+    const p = boundaryPoint(b, { x: 100, y: 500 }, () => null);
+    expect(p.y).toBeGreaterThan(b.y);
+    expect(p.y).toBeLessThan(b.y + b.h);
   });
 });

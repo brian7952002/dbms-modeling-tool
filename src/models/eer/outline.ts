@@ -26,6 +26,11 @@ export function eerOutline(node: BaseNode): Point[] | null {
         { x: n.x - hw, y: n.y },
       ];
     case 'isa':
+      // An unconstrained marker is drawn as nothing, so it is a joint rather
+      // than a shape: connectors run all the way to its centre and the
+      // superclass and subclass lines join into one unbroken line. Clipping
+      // to a boundary would leave a gap the width of a marker nobody can see.
+      if (n.constrained === false) return [];
       // The circle form is an ellipse; only the triangle form is a polygon.
       if (n.symbol !== 'triangle') return null;
       return [
